@@ -1,0 +1,26 @@
+### 목적
+개발시 겪었던 문제 정리
+### 규칙
+1. 푸시 요구 할 때
+  샌드박스 사용하지 않음
+  커밋 메시지는 브랜치 이름 기반
+  branch: {type}/{issue-number}/{title}
+  message: {type}: {issue-number} {변경 내용 요약}
+  example:
+    feature/SUP-1886/dual-write 일경우 커밋메시지는
+    feature: SUP-1886 dual-write 기능 추가
+2. PR형식
+  샌드박스 사용하지 않음
+  title: {gitmoji}{issue-number} {변경 내용 요약}
+3. 테스트 코드는 /test/{도메인} 폴더에 작성
+4. TDD방식을 요청할 시 테스트를 먼저 작성, 이후 코드 구현 전에 적용할 지 물어본후 수정한다.
+5. 안티 패턴을 요구하면 안티 패턴에 대해 설명하고 진행한다.
+6. 구현, 해결, 수정을 요구하는 것이 아니면 답변만하고 물어본후 진행한다.
+### 문서
+- docs
+  업무 처리
+- daily
+  일일 업무 정리
+  파일형식: YYMMDD.md
+### 주문 흐름
+docs/order-flow.md
