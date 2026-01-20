@@ -1,34 +1,34 @@
 ---
 name: 주문 API 마이그레이션
-overview: preppers-kds-lib의 주문 생성 로직을 preppers-order-server로 마이그레이션하고, 관리자가 수동으로 주문을 생성할 수 있는 API를 구현한 후 단위 테스트를 작성합니다.
+overview: preppers-order-server에 수동 주문 생성 API를 구현합니다. 메뉴/옵션은 Firestore에만 저장하고, customer_order 테이블에는 주문 기본 정보만 저장합니다.
 todos:
   - id: enums
-    content: Enum 및 공통 타입 마이그레이션 (PLATFORM, ORDER_STATUS 등)
-    status: completed
-  - id: entity-relations
-    content: Entity 간 관계 설정 (OneToMany, ManyToOne)
-    status: completed
+    content: Enum 추가 (PLATFORM_V2, SERVICE_TYPE, DEVICE)
+    status: in_progress
+  - id: entity-columns
+    content: customer_order Entity에 새 컬럼 추가
+    status: pending
     dependencies:
       - enums
   - id: dto-extend
-    content: CreateOrderDto 확장 (메뉴/옵션 중첩 DTO)
-    status: completed
+    content: CreateOrderDto에 새 필드 추가
+    status: pending
     dependencies:
       - enums
   - id: service-impl
-    content: OrdersService에 createWithMenus, findOneWithMenus 구현
-    status: completed
+    content: OrdersService create 로직 구현
+    status: pending
     dependencies:
-      - entity-relations
+      - entity-columns
       - dto-extend
   - id: controller-impl
     content: 수동 주문 생성 엔드포인트 추가 (POST /orders/manual)
-    status: completed
+    status: pending
     dependencies:
       - service-impl
   - id: unit-tests
     content: OrdersService 단위 테스트 작성
-    status: completed
+    status: pending
     dependencies:
       - service-impl
 ---
@@ -52,6 +52,38 @@ todos:
 
 ---
 
+## 제약사항 및 결정 사항
+
+### 1. 라즈베리파이 키오스크 주문의 foodId 제한
+
+**문제**: 라즈베리파이 키오스크에서 들어오는 주문은 `foodId`를 포함하지 않음
+- 키오스크는 로컬 메뉴 데이터를 사용하며, DB의 `food` 테이블과 실시간 동기화되지 않음
+- 주문 시점에 `food.id`를 알 수 없어 FK 연결 불가
+
+**결정**: `order_menus`, `order_menu_options` 테이블 사용하지 않음
+- 메뉴/옵션 정보는 기존처럼 Firestore에만 저장
+- `customer_order` 테이블에는 주문 기본 정보만 저장
+
+**교훈**: 데이터 소스별 제약사항은 실제 데이터 흐름을 확인해야 파악 가능
+
+### 2. Enum 구조 변경 (PLATFORM → PLATFORM_V2)
+
+**변경 내용**: 기존 `PLATFORM` enum이 세 가지로 분리됨
+
+```typescript
+// 기존
+PLATFORM: 'KIOSK' | 'YOGIYO' | 'BAEMIN' | ...
+
+// 변경
+PLATFORM_V2: 'SELVERS' | 'KIOSK' | 'PREPPERS' | 'YOGIYO' | 'COUPANGEATS' | ...
+SERVICE_TYPE: 'DELIVERY' | 'HALL' | 'TOGO'
+DEVICE: 'KIOSK' | 'POS' | 'DELIVERY_APP'
+```
+
+**영향 범위**: `customer_order`, `payments` 테이블에 새 컬럼 추가 필요
+
+---
+
 ## 구현 계획
 
 ### Phase 1: Enum 및 공통 타입 마이그레이션
@@ -62,29 +94,23 @@ todos:
    - PLATFORM, ORDER_STATUS, MENU_TYPE, OPTION_TYPE, MEAT_TYPE
    - MADE_DRINK_STATUS, PLATE_CHANGE_STATUS, ORDER_TYPE, POSITION
 
-### Phase 2: Entity 관계 설정
+### Phase 2: Entity 컬럼 추가
 
-1. [`src/entity/orders.ts`](src/entity/orders.ts): OrderMenuEntity와 OneToMany 관계 추가
-2. [`src/entity/order-menus.ts`](src/entity/order-menus.ts): OrderEntity와 ManyToOne, OrderMenuOptionEntity와 OneToMany 관계 추가
-3. [`src/entity/order-menu-options.ts`](src/entity/order-menu-options.ts): OrderMenuEntity와 ManyToOne 관계 추가
+1. `customer_order` Entity에 새 컬럼 추가:
+   - `platform_v2`: PLATFORM_V2 enum
+   - `service_type`: SERVICE_TYPE enum  
+   - `device`: DEVICE enum
 
 ### Phase 3: DTO 확장
 
 1. [`src/module/orders/dto/create-order.dto.ts`](src/module/orders/dto/create-order.dto.ts) 확장:
-
-   - CreateOrderMenuDto (메뉴 배열)
-   - CreateOrderMenuOptionDto (옵션 배열)
-   - 중첩된 주문 생성 지원
+   - platform_v2, service_type, device 필드 추가
 
 ### Phase 4: Service 로직 구현
 
 1. [`src/module/orders/orders.service.ts`](src/module/orders/orders.service.ts) 확장:
-
-   - `createWithMenus()`: 메뉴/옵션 포함 주문 생성 (트랜잭션 사용)
-   - `findOneWithMenus()`: 메뉴/옵션 포함 주문 조회
-   - OrderInfoFactory 로직 일부 적용 (주문번호 생성, 상태 결정)
-
-2. OrderMenuService, OrderMenuOptionService는 별도 생성하지 않고 OrdersService에서 통합 관리
+   - `create()`: 주문 생성 (새 enum 필드 포함)
+   - 주문번호 생성 로직 적용
 
 ### Phase 5: Controller 엔드포인트 추가
 
@@ -96,11 +122,9 @@ todos:
 ### Phase 6: 단위 테스트 작성
 
 1. [`src/module/orders/orders.service.spec.ts`](src/module/orders/orders.service.spec.ts) 생성:
-
    - create() 테스트
-   - createWithMenus() 테스트
-   - findOne() / findOneWithMenus() 테스트
-   - updateStatus(), completeOrder(), holdOrder() 테스트
+   - findOne() 테스트
+   - updateStatus() 테스트
 
 ---
 
@@ -115,21 +139,15 @@ flowchart TD
     subgraph API [preppers-order-server]
         Controller[OrdersController]
         Service[OrdersService]
-        Transaction[Transaction Manager]
     end
     
     subgraph Database [MySQL]
-        Orders[(orders)]
-        OrderMenus[(order_menus)]
-        OrderMenuOptions[(order_menu_options)]
+        Orders[(customer_order)]
     end
     
     ManualOrder --> Controller
     Controller --> Service
-    Service --> Transaction
-    Transaction --> Orders
-    Transaction --> OrderMenus
-    Transaction --> OrderMenuOptions
+    Service --> Orders
 ```
 
 ---
@@ -137,23 +155,10 @@ flowchart TD
 ## 주요 파일 변경 목록
 
 | 파일 | 작업 |
-
 |------|------|
-
-| `src/common/enums/index.ts` | 새로 생성 |
-
-| `src/entity/orders.ts` | 관계 추가 |
-
-| `src/entity/order-menus.ts` | 관계 추가 |
-
-| `src/entity/order-menu-options.ts` | 관계 추가 |
-
-| `src/module/orders/dto/create-order.dto.ts` | 중첩 DTO 추가 |
-
-| `src/module/orders/orders.service.ts` | createWithMenus 등 추가 |
-
+| `src/common/enums/index.ts` | PLATFORM_V2, SERVICE_TYPE, DEVICE enum 추가 |
+| `src/entity/customer-order.ts` | 새 컬럼 추가 (platform_v2, service_type, device) |
+| `src/module/orders/dto/create-order.dto.ts` | 새 필드 추가 |
+| `src/module/orders/orders.service.ts` | create 로직 수정 |
 | `src/module/orders/orders.controller.ts` | 수동 주문 엔드포인트 추가 |
-
-| `src/module/orders/orders.module.ts` | Entity 등록 확인 |
-
-| `src/module/orders/orders.service.spec.ts` | 새로 생성 |
+| `src/module/orders/orders.service.spec.ts` | 단위 테스트 |
