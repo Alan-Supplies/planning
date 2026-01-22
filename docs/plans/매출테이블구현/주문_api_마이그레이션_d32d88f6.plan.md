@@ -3,11 +3,16 @@ name: 주문 API 마이그레이션
 overview: preppers-order-server에 수동 주문 생성 API를 구현합니다. 메뉴/옵션은 Firestore에만 저장하고, customer_order 테이블에는 주문 기본 정보만 저장합니다.
 todos:
   - id: enums
-    content: Enum 추가 (PLATFORM_V2, SERVICE_TYPE, DEVICE)
-    status: in_progress
+    content: Enum 추가 (PLATFORM_V2, SERVICE_TYPE, DEVICE) - kds-lib v2.4.0-dev.15
+    status: completed
   - id: entity-columns
-    content: customer_order Entity에 새 컬럼 추가
-    status: pending
+    content: customer_order, payments Entity에 새 컬럼 추가
+    status: completed
+    dependencies:
+      - enums
+  - id: lib-update
+    content: kds-lib 버전 업데이트 (order-server, kds-serverless)
+    status: completed
     dependencies:
       - enums
   - id: dto-extend
