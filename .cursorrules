@@ -28,3 +28,9 @@ nodeJS,Typescript,React
   파일형식: YYMMDD.md
 ### 주문 흐름
 docs/order-flow.md
+### Notion MCP
+1. 개발일지
+  - database_id: 23339138-6b6c-4e1a-abb4-34740efcd33c (페이지 생성용)
+  - data_source_id: 88e6d2c8-7f81-4363-a288-736433c59189 (데이터 조회용)
+  - 컬럼형식
+    날짜: YYMMDD (ex: 260102)
