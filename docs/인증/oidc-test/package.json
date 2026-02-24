@@ -1,0 +1,16 @@
+{
+  "name": "k8s-oidc-test",
+  "version": "1.0.0",
+  "description": "Kubernetes OIDC 서비스 간 인증 테스트",
+  "scripts": {
+    "issuer": "node issuer-server.js",
+    "verifier": "node verifier-server.js",
+    "test": "node test-client.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.2",
+    "jwks-rsa": "^3.1.0",
+    "node-fetch": "^2.7.0"
+  }
+}
