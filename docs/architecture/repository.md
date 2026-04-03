@@ -138,3 +138,153 @@ service와 repository 사이에 생기는 계층은 보통 여러 요구가 섞�
 
 원하시면 다음엔
 이 문제를 최소 비용으로 관리하는 **팀 규약 5줄짜리 초안**처럼 정리해드릴게요.
+
+그럼 이어서, 이 문제를 **이름 논쟁 없이 관리하는 최소 규약** 쪽으로 정리해보겠습니다.
+
+## 제안: 팀 규약 초안
+
+### 1. Repository는 aggregate 저장소로 한정한다
+
+* `Repository`라는 이름은 함부로 넓게 쓰지 않는다
+* 저장/재구성 책임이 있는 대상에만 붙인다
+* 목록 화면, 검색, 통계, 대시보드 조회는 기본적으로 repository 책임이 아니다
+
+즉:
+
+* `OrderRepository`
+* `UserRepository`
+
+는 가능하지만,
+
+* 복잡한 목록 검색
+* 관리자 화면 필터 조회
+* 통계성 조회
+
+까지 전부 여기 넣지는 않습니다.
+
+---
+
+### 2. Service는 ORM 문법을 직접 다루지 않는다
+
+* `where`, `join`, `relations`, `queryBuilder`, `take/skip` 같은 ORM 세부사항은 service에서 직접 쓰지 않는다
+* service는 “무엇을 한다”만 표현한다
+* “어떻게 가져온다”는 아래 계층으로 내린다
+
+이 규칙 하나만 있어도 service 오염을 많이 막습니다.
+
+---
+
+### 3. 복잡한 조회는 별도 read 계층으로 분리한다
+
+이름은 프로젝트에서 정하되, 예를 들면:
+
+* `UserQueryService`
+* `OrderReadRepository`
+* `AdminOrderFinder`
+
+중 하나를 택합니다.
+
+중요한 건 이름보다 역할입니다.
+
+역할:
+
+* 검색
+* 목록
+* 필터링
+* 정렬
+* 페이지네이션
+* projection
+* join 최적화
+
+즉, **화면/API 최적화 조회 전용 계층**으로 둡니다.
+
+---
+
+### 4. Repository와 read 계층은 반환 타입도 다르게 가져간다
+
+* **Repository**: aggregate/entity 반환
+* **Read 계층**: DTO / Projection / ViewModel 반환
+
+이렇게 나누면 책임이 급격히 선명해집니다.
+
+예:
+
+* `orderRepository.findById(orderId): Order`
+* `orderQueryService.search(criteria): OrderListItemDto[]`
+
+이 구분이 없으면 두 계층이 다시 섞입니다.
+
+---
+
+### 5. 이름보다 경계 위반을 먼저 경계한다
+
+팀에서 제일 먼저 금지할 것은 이름 혼란보다 **경계 붕괴**입니다.
+
+예를 들면:
+
+* service에서 query builder 직접 작성
+* repository가 화면용 DTO를 마구 반환
+* read 계층이 aggregate 저장까지 담당
+* 같은 조회 조건이 여러 service에 복붙됨
+
+이런 것이 진짜 문제입니다.
+
+즉, 이름이 `DAO`냐 `Finder`냐보다
+**누가 무엇을 몰라야 하는가**를 더 중요하게 봐야 합니다.
+
+---
+
+## 그래서 현실적인 구조는 보통 이렇습니다
+
+### 쓰기 흐름
+
+* Controller
+* Application Service
+* Repository
+* ORM
+
+### 읽기 흐름
+
+* Controller
+* Query Service / Read Repository / Finder
+* ORM / SQL / Projection
+
+즉, 쓰기와 읽기를 **완전한 CQRS까지는 아니더라도 약하게 분리**하는 겁니다.
+
+---
+
+## 이름을 굳이 추천하자면
+
+제가 굳이 하나 추천하면, 가장 무난한 건:
+
+* **Repository**: aggregate 저장소
+* **QueryService**: 복잡한 조회
+
+입니다.
+
+이유는:
+
+* DAO는 너무 오래된 저수준 느낌이 강하고
+* ReadRepository는 repository라는 단어를 또 흐릴 수 있고
+* Finder/Selector는 팀 로컬 냄새가 강합니다
+* QueryService는 적어도 “조회 책임”이 드러납니다
+
+즉, 보편 이론으로는 부족해도 실무 커뮤니케이션에는 괜찮습니다.
+
+---
+
+## 아주 짧게 압축하면
+
+당신이 느낀 어려움은 정상입니다.
+
+보편 이름을 만들려 하기보다, 팀 안에서 이렇게만 합의하면 충분합니다.
+
+* Repository는 aggregate 저장소다
+* Service는 ORM 세부사항을 모른다
+* 복잡한 조회는 별도 query 계층으로 뺀다
+* 조회 계층은 DTO/Projection을 반환한다
+* 이름보다 책임 경계를 지킨다
+
+이 정도면 꽤 오래 버팁니다.
+
+다음으로는 이걸 바탕으로 **NestJS + TypeORM에서 추천 폴더 구조**까지 연결해서 설명할 수 있습니다.

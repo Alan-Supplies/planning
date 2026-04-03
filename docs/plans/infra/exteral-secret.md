@@ -9,3 +9,17 @@
 
 4. stacks/eks/preppers-cluster/k8s/
    → ExternalSecret 리소스 추가
+
+## 추가
+### stacks/eks
+- preppers-cluster/k8s
+  external-secrets.tf
+- supplies-eks-dev/k8s
+  external-secrets.tf
+### iam/eks
+- preppers-cluster
+  main.tf
+  outputs.tf
+- supplies-eks-dev
+  main.tf
+  outputs.tf
