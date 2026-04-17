@@ -23,6 +23,49 @@ graph LR
   KDS --> |JWT요청|AUTH
 ```
 
+```mermaid
+graph LR
+  subgraph Client
+    KDS(주방 KDS)
+  end
+
+  subgraph Backend
+    KDS_SERVER
+    ORDER_SERVER
+    AUTH
+  end
+
+  subgraph Database
+    ledger[(MySQL)]
+  end
+
+  KDS_SERVER --> ledger
+  ORDER_SERVER -->|원장 관리| ledger
+  ORDER_SERVER --> KDS_SERVER
+  KDS --> KDS_SERVER
+  KDS --> |JWT요청|AUTH
+```
+
+```mermaid
+graph LR
+  subgraph Client
+    KDS(주방 KDS)
+  end
+
+  subgraph Backend
+    KDS_SERVER
+    AUTH
+  end
+
+  subgraph Database
+    ledger[(MySQL)]
+  end
+
+  KDS_SERVER --> ledger
+  KDS --> KDS_SERVER
+  KDS --> |JWT요청|AUTH
+```
+
 ### 역할
 주방 KDS: 포지션별 조리 업무  
 ORDER_SERVER: 주문정보 관련 진입점  
