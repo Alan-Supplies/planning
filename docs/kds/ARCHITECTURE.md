@@ -68,5 +68,5 @@ graph LR
 
 ### 역할
 주방 KDS: 포지션별 조리 업무  
-ORDER_SERVER: 주문정보 관련 진입점  
+KDS_SERVER: 주문 이벤트 발행, 주문 상태 변경
 AUTH: 인증용 JWT생성
