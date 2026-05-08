@@ -2,36 +2,15 @@
 graph LR
   subgraph Client
     KDS(주방 KDS)
-  end
-
-  subgraph Backend
-    ORDER_SERVER
-    AUTH
-  end
-
-  subgraph Database
-    ledger[(MySQL)]
-    snapshot[(Firestore snapshot)]
-  end
-
-  KDS --> |상태 변경 요청| ORDER_SERVER
-
-  ORDER_SERVER -->|원장 관리| ledger
-  ORDER_SERVER -->|snapshot 갱신| snapshot
-  KDS -->|snapshot 구독| snapshot
-
-  KDS --> |JWT요청|AUTH
-```
-
-```mermaid
-graph LR
-  subgraph Client
-    KDS(주방 KDS)
+    POS(POS)
+    KIOSK(KIOSK)
   end
 
   subgraph Backend
     KDS_SERVER
     ORDER_SERVER
+    POS_SERVER
+    KIOSK_SERVER
     AUTH
   end
 
@@ -41,9 +20,16 @@ graph LR
 
   KDS_SERVER --> ledger
   ORDER_SERVER -->|원장 관리| ledger
-  ORDER_SERVER --> KDS_SERVER
   KDS --> KDS_SERVER
   KDS --> |JWT요청|AUTH
+
+  POS --> POS_SERVER
+  POS --> AUTH
+  POS_SERVER --> ORDER_SERVER
+
+  KIOSK --> KIOSK_SERVER
+  KIOSK --> AUTH
+  KIOSK_SERVER --> ORDER_SERVER
 ```
 
 ```mermaid
