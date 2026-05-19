@@ -1,6 +1,12 @@
 ### Token Usage
 | date | model | tokens | cost | 용도 |
 |--|--|--|--|--|
+May 19, 12:19 PM | auto | 2M | $0.71 | 조회 api 구현
+May 19, 12:17 PM | auto | 64.2K | $0.05 | 조회 api 구현
+May 19, 12:14 PM | gpt-5.5-medium | 21.1K | $0.03 | 조회 api 구현
+May 19, 12:10 PM | gpt-5.5-medium | 20.8K | $0.06 | 조회 api 구현
+May 19, 11:53 AM | gpt-5.5-medium | 20.5K | $0.11 | 조회 api 구현
+May 19, 11:47 AM | gpt-5.5-medium | 90.1K | $0.22 | 테스트 자동화 오류 수정
 May 14, 05:16 PM | gpt-5.5-medium | 71.6K | $0.17 | e2e 테스트 추가
 May 14, 04:30 PM | gpt-5.5-medium | 1.7M | $2.15 | e2e 테스트 추가
 May 14, 04:27 PM | gpt-5.5-medium | 24.2K | $0.05 | e2e 테스트 추가
