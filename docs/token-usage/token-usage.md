@@ -1,6 +1,23 @@
 ### Token Usage
 | date | model | tokens | cost | 용도 |
 |--|--|--|--|--|
+May 14, 05:16 PM | gpt-5.5-medium | 71.6K | $0.17 | e2e 테스트 추가
+May 14, 04:30 PM | gpt-5.5-medium | 1.7M | $2.15 | e2e 테스트 추가
+May 14, 04:27 PM | gpt-5.5-medium | 24.2K | $0.05 | e2e 테스트 추가
+May 14, 04:26 PM | gpt-5.5-medium | 45.5K | $0.07 | e2e 테스트 추가
+May 14, 04:23 PM | gpt-5.5-medium | 42K | $0.21 | e2e 테스트 추가
+May 14, 04:05 PM | gpt-5.5-medium | 4.8M | $4.68 | e2e 테스트 추가
+May 14, 03:37 PM | gpt-5.5-medium | 131.1K | $0.62 | e2e 테스트 추가
+May 14, 03:34 PM | gpt-5.5-medium | 71K | $0.26 | e2e 테스트 추가
+May 14, 03:24 PM | gpt-5.5-medium | 1.4M | $1.79 | 폴링 프드 임시 구현
+May 14, 12:16 PM | gpt-5.5-medium | 234.1K | $0.24 | 폴링 프드 임시 구현
+May 14, 11:53 AM | gpt-5.5-medium | 1.2M | $1.11 | 폴링 프드 임시 구현
+May 14, 11:49 AM | gpt-5.5-medium | 105.1K | $0.25 | 폴링 플랜 구현중
+May 14, 11:35 AM | gpt-5.5-medium | 9.6M | $9.63 | 폴링 플랜 구현중
+May 14, 11:32 AM | gpt-5.5-medium | 172.7K | $0.26 | 폴링 플랜 구현중
+May 14, 11:11 AM | gpt-5.5-medium | 197K | $0.46 | SSE plaing
+May 14, 11:04 AM | gpt-5.5-medium | 40K | $0.24 | SSE plaing
+May 14, 10:09 AM | gpt-5.5-medium | 229.7K | $0.45 | SSE plaing
 May 12, 06:15 PM | gpt-5.5-medium | 446.9K | $0.79 | SSE 테스트 효율화
 May 12, 06:12 PM | gpt-5.5-medium | 26.5K | $0.07 | SSE 테스트 효율화
 May 12, 06:10 PM | gpt-5.5-medium | 45.3K | $0.22 | SSE 테스트 효율화
