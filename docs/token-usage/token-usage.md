@@ -7,6 +7,20 @@ May 19, 12:14 PM | gpt-5.5-medium | 21.1K | $0.03 | 조회 api 구현
 May 19, 12:10 PM | gpt-5.5-medium | 20.8K | $0.06 | 조회 api 구현
 May 19, 11:53 AM | gpt-5.5-medium | 20.5K | $0.11 | 조회 api 구현
 May 19, 11:47 AM | gpt-5.5-medium | 90.1K | $0.22 | 테스트 자동화 오류 수정
+May 18, 02:59 PM | auto | 3.8만 | US$0.04 | 배포설정 잡기
+May 18, 02:42 PM | auto | 10.8만 | US$0.07 | 배포설정 잡기
+May 18, 02:25 PM | auto | 6.6만 | US$0.06 | 배포설정 잡기
+May 18, 01:46 PM | auto | 5.6만 | US$0.05 | 배포설정 잡기
+May 18, 01:10 PM | auto | 7.3만 | US$0.03 | 배포설정 잡기
+May 18, 01:02 PM | auto | 10.2만 | US$0.05 | 배포설정 잡기
+May 18, 12:51 PM | auto | 6.4만 | US$0.04 | 배포설정 잡기
+May 18, 12:02 PM | auto | 2.7만 | US$0.02 | 배포설정 잡기
+May 18, 11:58 AM | auto | 11.6만 | US$0.06 | 배포설정 잡기
+May 18, 11:30 AM | auto | 15.6만 | US$0.08 | 배포설정 잡기
+May 18, 10:28 AM | auto | 5.4만| US$0.02 | 기존 배포 검토
+May 18, 10:04 AM | gpt-5.5-medium | 11.8만| US$0.38 | 배포 설정
+May 18, 09:27 AM | gpt-5.5-medium | 5.7만| US$0.08 | 배포 설정
+May 18, 09:25 AM | gpt-5.5-medium | 5.5만| US$0.28 | 배포 설정
 May 14, 05:16 PM | gpt-5.5-medium | 71.6K | $0.17 | e2e 테스트 추가
 May 14, 04:30 PM | gpt-5.5-medium | 1.7M | $2.15 | e2e 테스트 추가
 May 14, 04:27 PM | gpt-5.5-medium | 24.2K | $0.05 | e2e 테스트 추가
@@ -53,6 +67,12 @@ May 12, 12:47 PM | gpt-5.5-medium | 157.1K | US$0.32 | 테스트 설정
 May 12, 12:44 PM | gpt-5.5-medium | 267.7K | US$0.47 | 테스트 설정
 May 12, 12:35 PM | gpt-5.5-medium | 85.4K | US$0.15 | 테스트 설정
 May 12, 12:22 PM | gpt-5.5-medium | 39.9K | US$0.12 | 테스트 설정
+May 15, 05:39 PM | gpt-5.5-medium | 8.8만 | US$0.14 | 모노레포 배포설정
+May 15, 05:27 PM | gpt-5.5-medium | 94.2만 | US$1.00 | 모노레포 배포설정
+May 15, 05:16 PM | gpt-5.5-medium | 2.6만 | US$0.08 | 모노레포 배포설정
+May 15, 04:57 PM | gpt-5.5-medium | 2.5만 | US$0.08 | 모노레포 배포설정
+May 15, 03:57 PM | gpt-5.5-medium | 6.5만 | US$0.13 | 모노레포 배포설정
+May 14, 05:55 PM | gpt-5.5-medium | 36.7만 | US$1.11 | 모노레포 배포설정
 May 11, 06:16 PM | gpt-5.5-medium | 177.4만 | US$1.34 | 테스트 도구 구조 분석 
 May 11, 05:56 PM | gpt-5.5-medium | 42.1만 | US$0.68 | SSE 구현
 May 11, 05:41 PM | gpt-5.5-medium | 11.6만 | US$0.28 | SSE 설계
