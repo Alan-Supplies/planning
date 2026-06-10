@@ -1,0 +1,4 @@
+## TODO
+1. revert시 status: KDS_ORDER_STATUS.REVERT
+2. 완료시 status: KDS_ORDER_STATUS.COMPLETE
+
