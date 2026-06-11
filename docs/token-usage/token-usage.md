@@ -1,6 +1,14 @@
 ### Token Usage
 | date | model | tokens | cost | 용도 |
 |--|--|--|--|--|
+Jun 9, 12:07 PM | composer-2.5-fast | 15.1K | $0.05 | type 수정
+Jun 9, 11:55 AM | claude-opus-4-8-thinking-high | 193.8K | $0.67 | food relation type 처리
+Jun 9, 11:54 AM | composer-2.5-fast | 102.4K | $0.24 | food relation type 처리
+Jun 9, 11:45 AM | composer-2.5-fast | 111.1K | $0.17 | type 수정
+Jun 9, 11:26 AM | composer-2.5-fast | 131.5K | $0.18 | type 수정
+Jun 9, 11:18 AM | composer-2.5-fast | 871.4K | $0.96 | type 수정
+Jun 9, 11:16 AM | composer-2.5-fast | 192.1K | $0.17 | type 수정
+Jun 9, 11:08 AM | composer-2.5-fast | 310.8K | $0.38 | type 수정
 May 20, 06:48 PM | gpt-5.5-medium | 118.4K | $0.19 | 테스트 및 배포 설정 수정
 May 20, 06:37 PM | gpt-5.5-medium | 333.9K | $0.66 | 테스트 및 배포 설정 수정
 May 20, 06:26 PM | gpt-5.5-medium | 89.6K | $0.27 | 테스트 및 배포 설정 수정
