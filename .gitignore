@@ -1,6 +1,9 @@
 .cursor/
 node_modules/
 .DS_Store
+.env
+.env.*
+!.env.example
 
 # 올리면 안되는 파일
 ignore.md

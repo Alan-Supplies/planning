@@ -1,0 +1,32 @@
+# @name opensearch-test
+# @no-cookie-jar
+# @ignore-ssl-errors
+
+@opensearchHost = https://localhost:9200
+@opensearchUser = admin
+@opensearchPassword = {{$dotenv OPENSEARCH_PASSWORD}}
+@opensearchIndex = preppers-order-2026.06.26
+
+### OpenSearch 클러스터 헬스 체크
+GET {{opensearchHost}}/_cluster/health
+Authorization: Basic {{opensearchUser}} {{opensearchPassword}}
+
+### index
+GET {{opensearchHost}}/_cat/indices?v&s=index
+Authorization: Basic {{opensearchUser}} {{opensearchPassword}}
+
+
+### search
+POST {{opensearchHost}}/{{opensearchIndex}}/_search
+Authorization: Basic {{opensearchUser}} {{opensearchPassword}}
+Content-Type: application/json
+
+{
+  "query": {
+    "range": {
+      "@timestamp": { "gte": "now-1h", "lte": "now" }
+    }
+  },
+  "size": 20,
+  "sort": [{ "@timestamp": "desc" }]
+}
