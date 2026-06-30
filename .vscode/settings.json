@@ -1,0 +1,20 @@
+{
+  "sqltools.connections": [
+    {
+      "mysqlOptions": {
+        "authProtocol": "default",
+        "enableSsl": "Disabled"
+      },
+      "ssh": "Disabled",
+      "previewLimit": 50,
+      "server": "kds-dev.cxubxpnokvfs.ap-northeast-2.rds.amazonaws.com",
+      "port": 3306,
+      "driver": "MySQL",
+      "name": "kds-dev",
+      "group": "preppers",
+      "database": "kds_dev",
+      "username": "readonly_user",
+      "password": "preppers123@"
+    }
+  ]
+}
