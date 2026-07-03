@@ -6,6 +6,9 @@
 @opensearchUser = admin
 @opensearchPassword = {{$dotenv OPENSEARCH_PASSWORD}}
 @opensearchIndex = preppers-order-2026.06.26
+@kdsIndex = preppers-kds-*
+@kdsOrderId = 13219
+@kdsServiceTypePath = /pri/v1/kds/orders/{{kdsOrderId}}/service-type
 
 ### OpenSearch 클러스터 헬스 체크
 GET {{opensearchHost}}/_cluster/health
@@ -15,6 +18,9 @@ Authorization: Basic {{opensearchUser}} {{opensearchPassword}}
 GET {{opensearchHost}}/_cat/indices?v&s=index
 Authorization: Basic {{opensearchUser}} {{opensearchPassword}}
 
+### index permission
+GET {{opensearchHost}}/_plugins/_security/api/roles/admin
+Authorization: Basic {{opensearchUser}} {{opensearchPassword}}
 
 ### search
 POST {{opensearchHost}}/{{opensearchIndex}}/_search
@@ -28,5 +34,119 @@ Content-Type: application/json
     }
   },
   "size": 20,
+  "sort": [{ "@timestamp": "desc" }]
+}
+
+### kds index resolve
+GET {{opensearchHost}}/_resolve/index/{{kdsIndex}}
+Authorization: Basic {{opensearchUser}} {{opensearchPassword}}
+
+### kds field caps - url/service 필드명 확인
+GET {{opensearchHost}}/{{kdsIndex}}/_field_caps?fields=@timestamp,url.*,http.*,service.*,log.*,message,kubernetes.*
+Authorization: Basic {{opensearchUser}} {{opensearchPassword}}
+
+### kds service-type 요청 로그 - 정확한 order id
+POST {{opensearchHost}}/{{kdsIndex}}/_search
+Authorization: Basic {{opensearchUser}} {{opensearchPassword}}
+Content-Type: application/json
+
+{
+  "query": {
+    "bool": {
+      "filter": [
+        { "range": { "@timestamp": { "gte": "now-24h", "lte": "now" } } }
+      ],
+      "should": [
+        { "term": { "url.path.keyword": "{{kdsServiceTypePath}}" } },
+        { "match_phrase": { "url.path": "{{kdsServiceTypePath}}" } },
+        { "match_phrase": { "message": "{{kdsServiceTypePath}}" } }
+      ],
+      "minimum_should_match": 1
+    }
+  },
+  "size": 50,
+  "sort": [{ "@timestamp": "desc" }]
+}
+
+### kds service-type 요청 로그 - 헤더/토큰 후보 필드 확인
+POST {{opensearchHost}}/{{kdsIndex}}/_search
+Authorization: Basic {{opensearchUser}} {{opensearchPassword}}
+Content-Type: application/json
+
+{
+  "_source": [
+    "@timestamp",
+    "message",
+    "url.*",
+    "http.*",
+    "headers.*",
+    "request.*",
+    "req.*",
+    "authorization",
+    "Authorization",
+    "jwt",
+    "token",
+    "user.*",
+    "auth.*",
+    "service.*",
+    "kubernetes.*",
+    "log.*"
+  ],
+  "query": {
+    "bool": {
+      "filter": [
+        { "range": { "@timestamp": { "gte": "now-24h", "lte": "now" } } }
+      ],
+      "should": [
+        { "term": { "url.path.keyword": "{{kdsServiceTypePath}}" } },
+        { "match_phrase": { "url.path": "{{kdsServiceTypePath}}" } },
+        { "match_phrase": { "message": "{{kdsServiceTypePath}}" } }
+      ],
+      "minimum_should_match": 1
+    }
+  },
+  "size": 10,
+  "sort": [{ "@timestamp": "desc" }]
+}
+
+### kds authorization/token 문자열 검색
+POST {{opensearchHost}}/{{kdsIndex}}/_search
+Authorization: Basic {{opensearchUser}} {{opensearchPassword}}
+Content-Type: application/json
+
+{
+  "query": {
+    "bool": {
+      "filter": [
+        { "range": { "@timestamp": { "gte": "now-24h", "lte": "now" } } }
+      ],
+      "must": [
+        { "query_string": { "query": "\"{{kdsServiceTypePath}}\" AND (Authorization OR authorization OR Bearer OR token OR jwt)" } }
+      ]
+    }
+  },
+  "size": 20,
+  "sort": [{ "@timestamp": "desc" }]
+}
+
+### kds service-type 요청 로그 - order id 모를 때
+POST {{opensearchHost}}/{{kdsIndex}}/_search
+Authorization: Basic {{opensearchUser}} {{opensearchPassword}}
+Content-Type: application/json
+
+{
+  "query": {
+    "bool": {
+      "filter": [
+        { "range": { "@timestamp": { "gte": "now-24h", "lte": "now" } } }
+      ],
+      "should": [
+        { "wildcard": { "url.path.keyword": "/pri/v1/kds/orders/*/service-type" } },
+        { "query_string": { "query": "\"/pri/v1/kds/orders\" AND \"service-type\"" } }
+      ],
+      "minimum_should_match": 1
+    }
+  },
+  "size": 50,
   "sort": [{ "@timestamp": "desc" }]
 }
