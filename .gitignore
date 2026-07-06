@@ -7,3 +7,6 @@ node_modules/
 
 # 올리면 안되는 파일
 ignore.md
+
+# temp
+temp.sql
