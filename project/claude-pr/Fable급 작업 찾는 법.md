@@ -1,0 +1,103 @@
+# Fable급 작업 찾는 법
+
+## 배경
+
+- Claude Fable 5(`claude-fable-5`)는 "Mythos-class"로 Opus보다 상위 등급. 2026-06-09 GA. 가격은 입력 $10/M · 출력 $50/M (Opus보다 비쌈). 컨텍스트 1M / 최대 출력 128k.
+- 작업이 길고, 단계가 많고, 모호할수록 Fable 5의 우위가 커진다 (장기 자율 작업, 다단계 계획, 서브에이전트 위임, 자기검증). 반대로 단순하고 범위가 명확한 작업엔 비용 대비 비효율적.
+- 이 문서의 목적: 한 프로젝트가 아니라 **회사 전체 워크플로우**에서 "이 작업은 Fable 5로 돌릴 가치가 있다"고 볼 수 있는 후보를 Slack/이슈 트래커 검색으로 찾아내는 방법을 정리한다.
+- 아래 판단 기준은 새로 만든 게 아니라 기존에 합의한 모델 라우팅 기준(장기 호라이즌 · 다단계 계획 · 모호성 · 교차 서비스 범위 · 서브에이전트 위임 유용성 · 실패/재작업 비용)을 재사용한 것.
+
+## Fable-class 판단 기준 (스코어링)
+
+| 기준 | 0점 | 1점 | 2점 |
+|---|---|---|---|
+| 작업 기간 (Long-horizon) | 분~1시간 내 단발 작업 | 반나절~1일, 여러 세션 | 여러 날 지속, 중간 상태 추적 필요 |
+| 계획 복잡도 (Multi-step planning) | 단일 단계/뻔한 절차 | 3~5단계 순차 계획 | 동적 재계획·분기·실패 시 전략 수정 필요 |
+| 모호성 (Ambiguity) | 요구사항 명확·완전 | 일부 가정 필요, 열린 질문 존재 | 요구사항 불완전/모순, 상당한 조사·해석 필요 |
+| 범위 (Cross-file/cross-service) | 단일 파일/서비스 | 여러 파일 또는 2개 서비스 | 3개 이상 서비스/레포/팀 경계 교차 |
+| 서브에이전트 위임 유용성 | 위임 불필요 | 부분적으로 병렬화 가능 | 조사/구현/검증 등 명확히 분리되는 하위 작업 다수 |
+| 실패/재작업 비용 | 되돌리기 쉬움, 영향 적음 | 되돌리는 데 시간 소요 (PR 왕복, 롤백) | 프로덕션 장애·다운스트림 영향·대규모 재작업 |
+
+## 종합 판정 기준
+
+- 합계 0~12점
+- **8~12점: Fable 5 후보** — 바로 라우팅
+- **4~7점: 경계선** — Sonnet으로 먼저 시도, 막히거나 루프 돌면 Fable로 에스컬레이션
+- **0~3점: Sonnet/Haiku면 충분** — Fable은 과함
+
+## Slack 검색 쿼리
+
+Slack 검색 연산자(`in:`, `from:`, `has:`, `before:`/`after:` 등)는 워크스페이스/요금제에 따라 사용 가능 여부가 다를 수 있으니 실제 검색창에서 맞춰 조정할 것. 또한 Slack 검색에는 **스레드 길이/참여자 수 필터가 없다** — 아래 쿼리로 좁힌 뒤 결과를 수동으로 훑어야 한다.
+
+```
+after:2026-04-01 before:2026-07-01 "여러 단계" OR "multi-step" OR "step by step"
+```
+
+```
+in:#eng-* "불확실" OR "TBD" OR "확인 필요" OR "ambiguous"
+```
+
+```
+"여러 서비스" OR "cross-service" OR "여러 팀" OR "여러 레포"
+```
+
+```
+in:#incidents "포스트모템" OR "postmortem" OR "장애" OR "롤백"
+```
+
+```
+"마이그레이션" OR "migration" OR "리팩터링 전체" OR "전면 개편"
+```
+
+```
+from:@alan has:link before:2026-07-08
+```
+
+수동 스캔 휴리스틱(쿼리로 못 거르는 부분): 답글 15개 이상, 3일 이상 지속, 참여자 3명 이상 & 서로 다른 팀 채널을 넘나드는 스레드 — 이 조합이 실제 장기/교차 서비스 신호에 가깝다.
+
+## 이슈 트래커 검색 쿼리
+
+실제 사용 트래커가 확정되지 않아 세 갈래로 예시를 든다. 공통으로 볼 필터: `label:epic`/`architecture`/`migration`, 연결된 이슈 3개 이상, in-progress 2주 이상 지속, 재오픈 이력 있음, 여러 팀 라벨/워처가 걸린 이슈.
+
+Jira (JQL):
+
+```
+labels in (epic, migration, architecture) AND status = "In Progress" AND updated <= -14d ORDER BY updated ASC
+```
+
+```
+issueFunction in linkedIssuesOf("project = X") AND labels = architecture
+```
+
+GitHub Issues:
+
+```
+is:issue is:open label:epic comments:>20
+```
+
+```
+is:issue linked:pr label:migration
+```
+
+Linear (필터 패널 조합):
+
+```
+Label: epic · State: In Progress for >10 days · Sub-issues: >3
+```
+
+## 사용 방법 (실행 절차)
+
+1. 위 Slack/이슈 트래커 쿼리를 주기적으로(예: 주 1회) 돌려서 후보 스레드/이슈를 모은다.
+2. 각 후보를 `Fable-class 판단 기준` 표에 대입해 스코어링한다.
+3. 8점 이상만 Fable 후보로 추리고, 4~7점은 Sonnet 시도 후 막히면 에스컬레이션 대상으로 별도 표시한다.
+
+## 다음 단계: 자동화
+
+지금은 위 쿼리를 Slack/이슈 트래커 검색창에 직접 붙여넣어 후보를 찾는 수동 방식이다. 다음 단계는 Slack MCP 커넥터 + 이슈 트래커(Jira/Linear/GitHub) MCP 커넥터를 연결해서 이 스코어링 기준을 스크립트/에이전트로 자동 적용하고, 정기적으로 후보 다이제스트를 뽑아내는 것이다 (현재 두 커넥터 모두 미설치 상태).
+
+## 참고
+
+- [Claude Fable 5 발표](https://www.anthropic.com/news/claude-fable-5-mythos-5)
+- [Claude Fable 5 / Mythos 5 소개 문서](https://platform.claude.com/docs/en/about-claude/models/introducing-claude-fable-5-and-claude-mythos-5)
+
+#claude_routing
