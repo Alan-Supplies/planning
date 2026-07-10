@@ -1,0 +1,32 @@
+curl --location 'https://dev-pp-api.supp.fitness/pri/v1/kiosk/order' \
+--header 'Content-Type: application/json' \
+--header 'Accept: application/json' \
+--header 'X-Kiosk-number: 1' \
+--header 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJicmFuY2hVbmlxdWVJZCI6IjIwMDU2Iiwia2lvc2tOdW1iZXIiOiIwMSIsInN0b3JlSWQiOjU2LCJrZXkiOiJwcmVwcGVycyIsImlhdCI6MTc4MzUwMzk1NCwiZXhwIjoxODE1MDYxNTU0fQ.cGM6OlRZ_34Iut3Pl_UC3Im3s8uk58_SNe3uPL7Z9t8' \
+--data '{
+   "storeId":56,
+   "approvedAt":"260708191700",
+   "isDineIn":true,
+   "method":"KIOSK",
+   "orderAmount":10900,
+   "discountAmount":0,
+   "paymentAmount":10900,
+   "cardCompany":"POSTMAN",
+   "cardNumber4":"5327",
+   "approvedNumber":"74495342",
+   "orderFoodList":[
+      {
+         "foodId":25,
+         "priceAmount":10900,
+         "optionList":[
+
+         ],
+         "eventList":[
+
+         ],
+         "couponList":[
+
+         ]
+      }
+   ]
+}'
