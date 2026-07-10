@@ -1,0 +1,6 @@
+node_modules/
+# 서비스 계정 키는 절대 저장소에 두지 마세요. 방어용 패턴:
+*sa*.json
+*service-account*.json
+*credentials*.json
+*key*.json
