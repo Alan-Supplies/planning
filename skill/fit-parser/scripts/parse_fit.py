@@ -51,9 +51,32 @@ GLOBAL_MESSAGES = {
     20: "record",
     21: "event",
     34: "activity",
+    206: "field_description",
+    207: "developer_data_id",
+}
+
+MANUFACTURERS = {
+    1: "garmin",
+    23: "suunto",
+    32: "wahoo_fitness",
+    294: "coros",
 }
 
 FIELD_NAMES: dict[int, dict[int, str]] = {
+    0: {
+        0: "type",
+        1: "manufacturer",
+        2: "product",
+        3: "serial_number",
+        4: "time_created",
+    },
+    206: {
+        0: "developer_data_index",
+        1: "field_definition_number",
+        2: "fit_base_type_id",
+        3: "field_name",
+        8: "units",
+    },
     18: {
         2: "start_time",
         5: "sport",
@@ -68,8 +91,18 @@ FIELD_NAMES: dict[int, dict[int, str]] = {
         17: "max_heart_rate",
         18: "avg_cadence",
         19: "max_cadence",
-        21: "total_ascent",
-        22: "total_descent",
+        20: "avg_power",
+        21: "max_power",
+        22: "total_ascent",
+        23: "total_descent",
+        57: "avg_temperature",
+        64: "min_heart_rate",
+        89: "avg_vertical_oscillation",
+        90: "avg_stance_time_percent",
+        91: "avg_stance_time",
+        132: "avg_vertical_ratio",
+        133: "avg_stance_time_balance",
+        134: "avg_step_length",
         253: "timestamp",
     },
     19: {
@@ -88,6 +121,13 @@ FIELD_NAMES: dict[int, dict[int, str]] = {
         20: "max_power",
         21: "total_ascent",
         22: "total_descent",
+        63: "min_heart_rate",
+        77: "avg_vertical_oscillation",
+        78: "avg_stance_time_percent",
+        79: "avg_stance_time",
+        118: "avg_vertical_ratio",
+        119: "avg_stance_time_balance",
+        120: "avg_step_length",
         253: "timestamp",
     },
     20: {
@@ -101,8 +141,17 @@ FIELD_NAMES: dict[int, dict[int, str]] = {
         7: "power",
         9: "grade",
         13: "temperature",
+        29: "accumulated_power",
+        32: "vertical_speed",
+        39: "vertical_oscillation",
+        40: "stance_time_percent",
+        41: "stance_time",
+        42: "activity_type",
         73: "enhanced_speed",
         78: "enhanced_altitude",
+        83: "vertical_ratio",
+        84: "stance_time_balance",
+        85: "step_length",
         253: "timestamp",
     },
     34: {
@@ -135,11 +184,18 @@ class FieldDef:
 
 
 @dataclass
+class DevFieldDef:
+    number: int
+    size: int
+    data_index: int
+
+
+@dataclass
 class Definition:
     global_message: int
     endian: str
     fields: list[FieldDef]
-    developer_field_sizes: list[int]
+    developer_fields: list[DevFieldDef]
 
 
 def fit_time(value: int | None) -> str | None:
@@ -157,19 +213,39 @@ def semicircles_to_degrees(value: int | None) -> float | None:
 def scaled(field_name: str, value: Any) -> Any:
     if value is None:
         return None
-    if field_name in {"timestamp", "start_time"}:
+    if field_name in {"timestamp", "start_time", "time_created"}:
         return fit_time(value)
+    if field_name == "manufacturer":
+        return MANUFACTURERS.get(value, value)
     if field_name in {"position_lat", "position_long"}:
         return semicircles_to_degrees(value)
     if field_name in {"altitude", "enhanced_altitude"}:
         return value / 5 - 500
     if field_name in {"distance", "total_distance"}:
         return value / 100
-    if field_name in {"speed", "enhanced_speed", "avg_speed", "max_speed"}:
+    if field_name in {"speed", "enhanced_speed", "avg_speed", "max_speed", "vertical_speed"}:
         return value / 1000
     if field_name in {"total_elapsed_time", "total_timer_time"}:
         return value / 1000
     if field_name == "grade":
+        return value / 100
+    if field_name in {
+        "vertical_oscillation",
+        "avg_vertical_oscillation",
+        "stance_time",
+        "avg_stance_time",
+        "step_length",
+        "avg_step_length",
+    }:
+        return value / 10
+    if field_name in {
+        "stance_time_percent",
+        "avg_stance_time_percent",
+        "vertical_ratio",
+        "avg_vertical_ratio",
+        "stance_time_balance",
+        "avg_stance_time_balance",
+    }:
         return value / 100
     if field_name == "sport":
         return SPORTS.get(value, value)
@@ -218,6 +294,7 @@ def parse_fit(path: Path) -> dict[str, Any]:
     offset = 0
     definitions: dict[int, Definition] = {}
     messages: dict[str, list[dict[str, Any]]] = {}
+    dev_field_descriptions: dict[tuple[int, int], dict[str, Any]] = {}
 
     while offset < len(data):
         record_header = data[offset]
@@ -249,22 +326,24 @@ def parse_fit(path: Path) -> dict[str, Any]:
                     offset += 3
                     fields.append(FieldDef(number, size, base_type))
 
-                developer_field_sizes: list[int] = []
+                developer_fields: list[DevFieldDef] = []
                 if record_header & 0x20:
                     developer_field_count = data[offset]
                     offset += 1
                     for _ in range(developer_field_count):
-                        _developer_number = data[offset]
+                        developer_number = data[offset]
                         developer_size = data[offset + 1]
-                        _developer_index = data[offset + 2]
+                        developer_index = data[offset + 2]
                         offset += 3
-                        developer_field_sizes.append(developer_size)
+                        developer_fields.append(
+                            DevFieldDef(developer_number, developer_size, developer_index)
+                        )
 
                 definitions[local_type] = Definition(
                     global_message=global_message,
                     endian=endian,
                     fields=fields,
-                    developer_field_sizes=developer_field_sizes,
+                    developer_fields=developer_fields,
                 )
                 continue
 
@@ -281,14 +360,43 @@ def parse_fit(path: Path) -> dict[str, Any]:
             offset += field.size
             message[field_name] = scaled(field_name, value)
 
-        for developer_size in definition.developer_field_sizes:
-            offset += developer_size
+        for dev_field in definition.developer_fields:
+            # field_description(전역 206) 메시지로 등록된 이름/타입으로 디코딩.
+            # Suunto 등은 일부 지표를 developer 필드로 기록한다.
+            description = dev_field_descriptions.get(
+                (dev_field.data_index, dev_field.number)
+            )
+            if description:
+                name = f"dev_{description['name']}"
+                base_type = description["base_type"]
+                value = decode_value(
+                    data,
+                    offset,
+                    FieldDef(dev_field.number, dev_field.size, base_type),
+                    definition.endian,
+                )
+            else:
+                name = f"dev_{dev_field.data_index}_{dev_field.number}"
+                value = data[offset : offset + dev_field.size].hex()
+            offset += dev_field.size
+            message[name] = value
 
         message_name = GLOBAL_MESSAGES.get(
             definition.global_message,
             f"global_{definition.global_message}",
         )
         messages.setdefault(message_name, []).append(message)
+
+        if message_name == "field_description":
+            index = message.get("developer_data_index")
+            number = message.get("field_definition_number")
+            base_type = message.get("fit_base_type_id")
+            if index is not None and number is not None and base_type is not None:
+                raw_name = message.get("field_name") or f"{index}_{number}"
+                dev_field_descriptions[(index, number)] = {
+                    "name": str(raw_name).strip().replace(" ", "_").lower(),
+                    "base_type": base_type,
+                }
 
     return messages
 
@@ -299,7 +407,14 @@ def summarize(messages: dict[str, list[dict[str, Any]]]) -> dict[str, Any]:
     laps = messages.get("lap", [])
     session = sessions[-1] if sessions else {}
 
+    file_ids = messages.get("file_id", [])
+    device = file_ids[0] if file_ids else {}
+
     return {
+        "device": {
+            "manufacturer": device.get("manufacturer"),
+            "product": device.get("product"),
+        },
         "session": session,
         "record_count": len(records),
         "lap_count": len(laps),
@@ -321,6 +436,11 @@ def write_records_csv(records: list[dict[str, Any]], path: Path) -> None:
         "heart_rate",
         "cadence",
         "power",
+        "stance_time",
+        "vertical_oscillation",
+        "vertical_ratio",
+        "step_length",
+        "stance_time_balance",
         "temperature",
     ]
     discovered_columns = sorted({key for record in records for key in record})
