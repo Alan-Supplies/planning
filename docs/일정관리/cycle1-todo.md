@@ -18,7 +18,7 @@ _최종 업데이트: 2026-07-13 · 총 7건_
 ## GitOps - ArgoCD 도입 (6건)
 
 - [ ] [TECH-126](https://linear.app/suppliesfitness/issue/TECH-126/argocd-진행) ARGOCD 진행 — No priority · 📋 Todo _(상위 트래킹 이슈)_
-  - [ ] [TECH-127](https://linear.app/suppliesfitness/issue/TECH-127/argocd-웹훅-연결) ARGOCD 웹훅 연결 — Medium · 📋 Todo _(TECH-126 하위)_
+  - [X] ~~*[TECH-127](https://linear.app/suppliesfitness/issue/TECH-127/argocd-웹훅-연결) ARGOCD 웹훅 연결 — Medium · 📋 Todo _(TECH-126 하위)_*~~ [2026-07-13]
 - [ ] [TECH-144](https://linear.app/suppliesfitness/issue/TECH-144/argocd-적용-계획) ARGOCD 적용 계획 — Medium · 📋 Todo
 - [ ] [TECH-145](https://linear.app/suppliesfitness/issue/TECH-145/app-project-설계) App Project 설계 — Medium · 📋 Todo
 - [ ] [TECH-146](https://linear.app/suppliesfitness/issue/TECH-146/argocd-배포-정책) ARGOCD 배포 정책 (auto-sync/self-heal/drift, vince 상의) — Medium · 📋 Todo
