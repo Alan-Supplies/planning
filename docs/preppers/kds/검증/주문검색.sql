@@ -5,3 +5,10 @@ select co.id, co.store_id, co.order_number
   FROM customer_order co
   left join kds_order ko on ko.order_id = co.id
   where co.id = 1134085;
+
+--
+select s.id, s.name, s.branch_unique_id, s.branch_password
+  , ka.id, ka.password
+  from store s
+    left join kds_account ka on ka.store_id = s.id
+  where s.name like '%용산%';
