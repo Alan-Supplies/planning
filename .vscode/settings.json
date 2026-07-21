@@ -15,6 +15,22 @@
       "database": "kds_dev",
       "username": "readonly_user",
       "password": "preppers123@"
+    },
+    {
+      "mysqlOptions": {
+        "authProtocol": "default",
+        "enableSsl": "Disabled"
+      },
+      "ssh": "Disabled",
+      "previewLimit": 50,
+      "server": "kds-prod.cxubxpnokvfs.ap-northeast-2.rds.amazonaws.com",
+      "port": 3306,
+      "driver": "MySQL",
+      "name": "kds_prod",
+      "group": "kds",
+      "database": "kds",
+      "username": "readonly_user",
+      "password": "preppers123@"
     }
   ]
 }
