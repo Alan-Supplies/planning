@@ -1,0 +1,37 @@
+{
+  "contractVersion": "1.0",
+  "producedAt": "2026-07-24T09:00:00Z",
+  "cluster": {
+    "name": "prod-apne2-01",
+    "endpoint": "https://A1B2C3.gr7.ap-northeast-2.eks.amazonaws.com",
+    "region": "ap-northeast-2",
+    "oidcIssuerUrl": "https://oidc.eks.ap-northeast-2.amazonaws.com/id/A1B2C3",
+    "caData": "LS0tLS1CRUdJTiBD...(truncated)"
+  },
+  "argocd": {
+    "namespace": "argocd",
+    "appProject": "platform",
+    "repoUrl": "https://github.com/acme/platform-gitops.git",
+    "rootAppPath": "bootstrap/root",
+    "rootAppName": "root",
+    "selfManaged": true
+  },
+  "workloadIdentities": [
+    {
+      "serviceAccount": "argocd/argocd-application-controller",
+      "roleArn": "arn:aws:iam::123456789012:role/prod-argocd-app-controller"
+    },
+    {
+      "serviceAccount": "external-secrets/external-secrets",
+      "roleArn": "arn:aws:iam::123456789012:role/prod-external-secrets"
+    }
+  ],
+  "grayZone": {
+    "namespaceCreation": "gitops",
+    "externalSecretsOperatorInstall": "iac",
+    "externalSecretDefinitions": "gitops",
+    "crds": "gitops",
+    "clusterRbac": "iac",
+    "namespaceRbac": "gitops"
+  }
+}

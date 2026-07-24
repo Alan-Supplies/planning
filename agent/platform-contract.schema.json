@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://platform.internal/schemas/platform-contract.schema.json",
+  "title": "PlatformContract",
+  "description": "iac ↔ gitops 사이 유일한 교환 계약. 이 스키마 변경 권한은 arbiter 에게만 있다.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contractVersion", "producedAt", "cluster", "argocd", "workloadIdentities", "grayZone"],
+  "properties": {
+    "contractVersion": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+$",
+      "description": "스키마 버전. breaking change 시 major 증가."
+    },
+    "producedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "cluster": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "endpoint", "region", "oidcIssuerUrl"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "endpoint": { "type": "string", "format": "uri" },
+        "region": { "type": "string", "minLength": 1 },
+        "oidcIssuerUrl": { "type": "string", "format": "uri" },
+        "caData": { "type": "string" }
+      }
+    },
+    "argocd": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["namespace", "appProject", "repoUrl", "rootAppPath", "rootAppName", "selfManaged"],
+      "properties": {
+        "namespace": { "type": "string", "minLength": 1 },
+        "appProject": { "type": "string", "minLength": 1 },
+        "repoUrl": { "type": "string", "minLength": 1 },
+        "rootAppPath": { "type": "string", "minLength": 1 },
+        "rootAppName": { "type": "string", "minLength": 1 },
+        "selfManaged": { "type": "boolean" }
+      }
+    },
+    "workloadIdentities": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["serviceAccount", "roleArn"],
+        "properties": {
+          "serviceAccount": {
+            "type": "string",
+            "pattern": "^[a-z0-9-]+/[a-z0-9-]+$",
+            "description": "namespace/name 형식"
+          },
+          "roleArn": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "grayZone": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "회색지대 소유권 배정. DESIGN.md §2 표와 일치.",
+      "required": [
+        "namespaceCreation",
+        "externalSecretsOperatorInstall",
+        "externalSecretDefinitions",
+        "crds",
+        "clusterRbac",
+        "namespaceRbac"
+      ],
+      "properties": {
+        "namespaceCreation": { "$ref": "#/$defs/owner" },
+        "externalSecretsOperatorInstall": { "$ref": "#/$defs/owner" },
+        "externalSecretDefinitions": { "$ref": "#/$defs/owner" },
+        "crds": { "$ref": "#/$defs/owner" },
+        "clusterRbac": { "$ref": "#/$defs/owner" },
+        "namespaceRbac": { "$ref": "#/$defs/owner" }
+      }
+    }
+  },
+  "$defs": {
+    "owner": {
+      "type": "string",
+      "enum": ["iac", "gitops"]
+    }
+  }
+}
