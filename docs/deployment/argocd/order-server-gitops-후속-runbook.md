@@ -17,7 +17,7 @@
   - 파일럿 브랜치 `feature/TECH-147/argocd-chart` (bump 블록 + gitops/ 포함) — 죽은 브랜치지만 이력용 보존. 로컬 커밋 `be4539c` push 금지.
   - ArgoCD 옛 credential `repo-preppers-order-server` — 미사용, 정리 대상(선택).
 - **✅ 작업 4·6 완료 (2026-07-20)**: kds 온보딩(preppers-dev 공유, 무중단 라우트 컷오버) + **shared ArgoCD 승격**(argocd-alan→argocd, TF, 무중단 — 워크로드 재생성 0). ArgoCD ns 는 이제 **`argocd`**.
-- **🔶 작업 5 진행 중 (2026-07-20)**: preppers-cluster 에 ArgoCD **컨트롤플레인 설치 완료**(빈 상태, 부트스트랩 전). preppers prod 워크로드는 아직 `default` ns 서빙 중. platform-iac argocd.tf 는 **커밋/PR 대기**(feature/argocd-apply).
+- **🔶 작업 5 진행 중 (2026-07-24)**: preppers-cluster 에 ArgoCD 컨트롤플레인을 설치하고 **prod preppers CD Application들을 등록**했다. 실제 CD 전환·검증과 기존 buildspec의 `kubectl apply` 제거는 남아 있다.
 - **✅ 작업 8 완료 (2026-07-20)**: ArgoCD GitHub webhook 을 **IaC(argocd.tf)로 구현** — dev. `/api/webhook` 라우트(APISIX)+ `configs.secret.githubSecret`(random_password) + ApisixUpstream(https). 폴링(3분) → push 즉시 sync.
 - **🔶 작업 9 진행 중 (2026-07-20)**: CI 배포 자동화(ArgoCD Image Updater, 모델 C pull). GitOps 애노테이션 초안 + platform-iac(IRSA/helm) 작성 완료, **apply 전**(alan IAM 권한 + deploy key write + chart 검증 대기).
 - **dev CI 현황**: order-server=`aecut2io`(dotenv 수정 정상 빌드), kds live. **수동 image-bump.yml 은 태그 오입력 사고 다발** → 자동화(작업 9)로 대체 예정. 수동 시 함정: `image_tag` 는 **전체 태그** `preppers-order-dev-<hash>`(prefix 포함), 최신 정상 태그는 **deploy spec 이 아닌 default ns 의 Running 파드 이미지**로 확인.
@@ -308,7 +308,7 @@ kubectl get application -n argocd --context=supplies-eks-dev
 > **롤백**: argocd.tf revert → apply(argocd-alan 재생성) → 거기로 재부트스트랩. 워크로드는 전 과정 무영향.
 > **PR**: 검증 완료 후 platform-iac `feature/argocd-test` → `main` PR.
 
-### 5. main 승격 / prod 스탠드업 🔶 (진행 중 — preppers-cluster 컨트롤플레인 설치 완료)
+### 5. main 승격 / prod 스탠드업 🔶 (진행 중 — prod preppers CD Application 등록 완료)
 
 > **✅ 2026-07-20 진행분**: preppers-cluster 에 **ArgoCD 컨트롤플레인 설치 완료**(빈 상태, 7개 파드 Running).
 > - platform-iac: `stacks/eks/preppers-cluster/k8s/argocd.tf` **신규 생성**(모델 A, ns=argocd) + `variables.tf` 에 `argocd_chart_version` 추가.
@@ -317,6 +317,11 @@ kubectl get application -n argocd --context=supplies-eks-dev
 > - **신규 설치라 finalizer/CRD 함정 없음.** preppers prod 워크로드는 아직 `default` ns 에서 그대로 서빙(무관).
 > - **남은 것(부트스트랩)**: repo credential 등록 + preppers 스코프 root(`path: argocd/apps/preppers`) apply. 단, 실 워크로드 배포는
 >   values-prod / prereqs(preppers-prod ns) / apisix 라우트 / consumer / 결정 E·F 선행 필요 → **다음 단계**.
+
+> **✅ 2026-07-24 진행분**: prod에 preppers CD Application들을 등록했다.
+> - Image Updater와 webhook 적용에 예상보다 시간이 오래 걸렸다.
+> - 실제 CD 전환·검증과 기존 buildspec의 `kubectl apply` 제거는 미완료다.
+> - 다음 시작점: Application 상태 확인 → buildspec의 `kubectl apply` 제거 → ArgoCD 단일 배포 경로 전환·검증.
 
 **⚠️ prod 는 도메인별 클러스터 분리** (2026-07-20 확인):
 | env | 클러스터 | 도메인 |
@@ -397,6 +402,7 @@ kubectl delete apisixroute preppers-order-server-public-dev preppers-order-serve
 ---
 
 ## 변경 로그
+- 2026-07-24: prod preppers CD Application 등록. Image Updater·webhook 적용에 예상보다 시간이 오래 걸렸고, 기존 buildspec의 `kubectl apply` 제거가 전환 범위에서 누락된 것을 확인했다. 실제 CD 전환과 단일 배포 경로 검증은 후속 작업으로 남겼다.
 - 2026-07-20 (6): **작업 8 완료(webhook, IaC) + 작업 9 착수(CI 자동화, Image Updater) + dev CI 인시던트.**
   ① webhook: platform-iac argocd.tf 에 이미 구현됨 확인(secret/ApisixUpstream/ApisixRoute/output). IaC 소유 근거 정리(인스턴스 계층·자기참조 회피·secret in git 마찰). per-repo 동작·secret 동일 규칙 문서화.
   ② CI gap 발견: 수동 image-bump 라 컷오버 후 preppers-dev 가 옛 태그 정체(default 만 최신). **수동 bump 사고 다발**(`9hj83j0` 오타·`e9hj83j0` prefix 누락 → ImagePullBackOff, git revert 로 복구, 무중단). 최신 정상 태그는 Running 파드로 확인(deploy spec 아님).
