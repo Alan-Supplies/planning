@@ -1,5 +1,7 @@
 # Fable급 작업 찾는 법
-
+## 주의
+지라를 더 이상 쓰지 않는다.
+리니어로 이전 했다.
 ## 배경
 
 - Claude Fable 5(`claude-fable-5`)는 "Mythos-class"로 Opus보다 상위 등급. 2026-06-09 GA. 가격은 입력 $10/M · 출력 $50/M (Opus보다 비쌈). 컨텍스트 1M / 최대 출력 128k.
@@ -59,32 +61,6 @@ from:@alan has:link before:2026-07-08
 
 실제 사용 트래커가 확정되지 않아 세 갈래로 예시를 든다. 공통으로 볼 필터: `label:epic`/`architecture`/`migration`, 연결된 이슈 3개 이상, in-progress 2주 이상 지속, 재오픈 이력 있음, 여러 팀 라벨/워처가 걸린 이슈.
 
-Jira (JQL):
-
-```
-labels in (epic, migration, architecture) AND status = "In Progress" AND updated <= -14d ORDER BY updated ASC
-```
-
-```
-issueFunction in linkedIssuesOf("project = X") AND labels = architecture
-```
-
-GitHub Issues:
-
-```
-is:issue is:open label:epic comments:>20
-```
-
-```
-is:issue linked:pr label:migration
-```
-
-Linear (필터 패널 조합):
-
-```
-Label: epic · State: In Progress for >10 days · Sub-issues: >3
-```
-
 ## 사용 방법 (실행 절차)
 
 1. 위 Slack/이슈 트래커 쿼리를 주기적으로(예: 주 1회) 돌려서 후보 스레드/이슈를 모은다.
@@ -93,7 +69,7 @@ Label: epic · State: In Progress for >10 days · Sub-issues: >3
 
 ## 다음 단계: 자동화
 
-지금은 위 쿼리를 Slack/이슈 트래커 검색창에 직접 붙여넣어 후보를 찾는 수동 방식이다. 다음 단계는 Slack MCP 커넥터 + 이슈 트래커(Jira/Linear/GitHub) MCP 커넥터를 연결해서 이 스코어링 기준을 스크립트/에이전트로 자동 적용하고, 정기적으로 후보 다이제스트를 뽑아내는 것이다 (현재 두 커넥터 모두 미설치 상태).
+지금은 위 쿼리를 Slack/이슈 트래커 검색창에 직접 붙여넣어 후보를 찾는 수동 방식이다. 다음 단계는 Slack MCP 커넥터 + 이슈 트래커(Linear/GitHub) MCP 커넥터를 연결해서 이 스코어링 기준을 스크립트/에이전트로 자동 적용하고, 정기적으로 후보 다이제스트를 뽑아내는 것이다 (현재 두 커넥터 모두 미설치 상태).
 
 ## 참고
 

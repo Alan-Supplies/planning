@@ -4,7 +4,7 @@
 
 ## 이 저장소의 정체
 
-이 저장소는 **애플리케이션 코드베이스가 아닙니다**. Alan이 **Preppers**(레스토랑 주문 플랫폼: KDS/POS/KIOSK/ORDER/AUTH 서버) 업무를 위해 운영하는 개인/팀 플래닝 및 지식베이스 저장소입니다. 일일 업무 로그, 회의록, 아키텍처 참고자료, Jira/스프린트 기획, Claude Code로 저장한 플랜, Claude Code Skill 하나를 담고 있습니다. 실제 제품 소스코드는 이 저장소에 포함되지 않은 별도 저장소(예: `preppers-server`)에 있으며 — 여기 적힌 브랜치/커밋 컨벤션 등은 *그* 저장소들에서 작업할 때 지킬 규칙이지, 이 저장소 자체의 규칙이 아닙니다.
+이 저장소는 **애플리케이션 코드베이스가 아닙니다**. Alan이 **Preppers**(레스토랑 주문 플랫폼: KDS/POS/KIOSK/ORDER/AUTH 서버) 업무를 위해 운영하는 개인/팀 플래닝 및 지식베이스 저장소입니다. 일일 업무 로그, 회의록, 아키텍처 참고자료, Claude Code로 저장한 플랜, Claude Code Skill 하나를 담고 있습니다. 실제 제품 소스코드는 이 저장소에 포함되지 않은 별도 저장소(예: `preppers-server`)에 있으며 — 여기 적힌 브랜치/커밋 컨벤션 등은 *그* 저장소들에서 작업할 때 지킬 규칙이지, 이 저장소 자체의 규칙이 아닙니다.
 
 이 저장소 자체에는 빌드/린트/테스트 파이프라인이 없습니다.
 
@@ -15,7 +15,7 @@
   `order/`, `pos/`, `db/`, `deployment/`, `monitoring/`, `grafana/`, `network/`, `보안/`, `restful/`,
   `메뉴/`, `회의/` 등.
   - `docs/ai/` — 도구/주제별로 나뉜 Claude Code 운영 컨벤션. 일부 파일은 `@other.md` import로 체이닝됨
-    (예: `data.md` → `db.md`, `deploy.md` → `github.md` + `jira.md`) — 이 저장소가 이미 쓰던 AI 컨텍스트
+    (예: `data.md` → `db.md`, `deploy.md` → `github.md`) — 이 저장소가 이미 쓰던 AI 컨텍스트
     구성 패턴이며, 아래에서도 동일하게 재사용합니다.
   - `docs/plans/*.plan.md` — Claude Code의 plan 모드에서 저장된 플랜(파일명 뒤에 해시 접미사 붙음).
     현재 진행 중인 스펙이 아니라 "그때 제안/완료된 내용"의 기록으로 취급합니다.
@@ -49,7 +49,6 @@ Claude Code가 연동된 제품 저장소에서 작업할 때 쓰는 도구별 �
 각 파일 참고):
 
 - @docs/ai/github.md
-- @docs/ai/jira.md
 - @docs/ai/notion.md
 - @docs/ai/slack.md
 - @docs/ai/test.md
