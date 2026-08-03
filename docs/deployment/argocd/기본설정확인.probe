@@ -1,0 +1,66 @@
+- **웹훅 설정**
+  cd stacks/eks/eks_dev/k8s
+  terraform output -raw argocd_webhook_github_secret
+
+- **argocd 현재 상태**
+```sh
+argocd context
+```
+
+- **ECR 이미지 저장소 목록**
+```sh
+PROFILE=alan-supplies
+aws ecr describe-repositories --profile $PROFILE --region ap-northeast-2 --query 'repositories[].repositoryName' --output table
+```
+
+- **ECR 저장소 이미지 목록 json**
+```sh
+PROFILE=alan-supplies
+aws ecr describe-images \
+  --repository-name dev \
+  --profile $PROFILE \
+  --region ap-northeast-2 \
+  --query 'imageDetails[].{Tags:imageTags,Pushed:imagePushedAt}' \
+```
+- **ECR 저장소 이미지 목록 table**
+```sh
+PROFILE=alan-supplies
+PREFIX=${PREFIX:-public-server-dev}
+
+aws ecr describe-images \
+  --repository-name dev \
+  --profile "$PROFILE" \
+  --region ap-northeast-2 \
+  --output json |
+jq -r --arg prefix "$PREFIX" '
+  ["IMAGE TAGS", "PUSHED AT"],
+  (
+    .imageDetails[]
+    | select(any(.imageTags[]?; startswith($prefix)))
+    | [(.imageTags | join(", ")), .imagePushedAt]
+  )
+  | @tsv
+' | column -t -s $'\t'
+```
+
+- 배포된 이미지가 ECR 최신 태그와 같은지
+```sh
+DEPLOYMENT_NAME=admin-server-dev1
+kubectl get deploy $DEPLOYMENT_NAME -n default \
+  -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+```
+
+- Image Updater가 만든 write-back 커밋
+```sh
+DEPLOYMENT_PATH=gymboxx/admin-server/values-dev.yaml
+gh api "repos/suppliesfitness/platform-gitops/commits?path=apps/$DEPLOYMENT_PATH&per_page=5" \
+  --jq '.[] | "\(.sha[0:7]) \(.commit.message | gsub("\n+"; " ｜ "))"'
+```
+
+- ArgoCD 앱 상태 (Synced/Healthy 여야 함)
+```sh
+APPLICATION_NAME=gymboxx-admin-server-dev
+kubectl get app $APPLICATION_NAME -n argocd \
+  -o custom-columns='SYNC:.status.sync.status,HEALTH:.status.health.status' \
+  --context=arn:aws:eks:ap-northeast-2:699016088228:cluster/eks_dev
+```

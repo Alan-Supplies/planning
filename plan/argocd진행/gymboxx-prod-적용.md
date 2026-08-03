@@ -9,7 +9,12 @@
 CTX=arn:aws:eks:ap-northeast-2:699016088228:cluster/eks_prod
 ```
 
-> **진행 현황 (2026-07-29)**: 사전 조사 + 파일럿 실측·매니페스트 작성 **완료**(이 리포 쪽에서 할 수 있는 건 여기까지).
+> **최신 진행 현황 (2026-08-03)**: 기반 구성은 완료됐고 **검증 배포만 남았다**. prod를 바로 진행하지 않고,
+> dev에서 레포별 build와 이미지 pulling 분리 PR을 머지한 뒤 서비스별 `automated: auto`를 하나씩 검증한다.
+> dev 검증이 완료되면 같은 방식으로 prod를 서비스별 확산한다.
+>
+> **아래 2026-07-29 기록은 당시 사전 조사 기준의 이력이다.** 사전 조사 + 파일럿 실측·매니페스트 작성
+> **완료**(이 리포 쪽에서 할 수 있는 건 여기까지).
 > 파일럿 서비스로 **`hq-server-prod`** 선정(사용자 판단: "socket은 여러 서버 적용된다, hq는 오류가 명확하다" —
 > 문제 발생 시 감지가 쉬운 서비스를 우선). `apps/gymboxx/hq-server/values-prod.yaml` +
 > [gymboxx-prod-시크릿-관리.md](./gymboxx-prod-시크릿-관리.md) 커밋·push 완료.
@@ -69,6 +74,13 @@ CTX=arn:aws:eks:ap-northeast-2:699016088228:cluster/eks_prod
 - [ ] **스모크 테스트** — `/hq` prefix 외부 경로 확인.
 
 ## C. 확산 — 미착수 (파일럿 검증 후 나머지 9개)
+
+## D. 2026-08-03 검증 배포 순서
+
+- [ ] dev의 레포별 build와 이미지 pulling 분리 PR 머지 및 서비스별 `automated: auto` 검증 완료
+- [ ] prod 첫 서비스에 `automated: auto` 적용
+- [ ] `Synced/Healthy`, Pod 상태, 이미지 갱신·pulling과 운영 동작 확인
+- [ ] 이상이 없을 때 다음 prod 서비스로 하나씩 확산
 
 ## 파일럿 실측 노트 (2026-07-29, `kubectl get deploy hq-server-prod -n default --context=eks_prod`)
 | 항목 | 실측값 |
