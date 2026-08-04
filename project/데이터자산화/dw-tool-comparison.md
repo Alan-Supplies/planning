@@ -24,7 +24,7 @@
 |---|---|---|---|---|
 | 배치 적재 방식 | GCS → load job (무료, 스토리지만 과금) | 외부 스테이지 → `COPY INTO` (컴퓨트 과금) | S3 → `COPY` (컴퓨트 과금) | `INSERT` / 파일 임포트 |
 | 과금 모델 | 스토리지 + 쿼리 스캔바이트 (또는 flat-rate) | 스토리지 + 컴퓨트(크레딧, warehouse 가동시간) | 스토리지 + 컴퓨트(RPU 사용시간) | 인프라비용(self-hosted) 또는 관리형 과금 |
-| 배치 워크로드 적합성 | 좋음 — 로드 자체가 무과금, 쿼리만 과금 | 좋음 — warehouse auto-suspend로 유휴비용 최소화 | 좋음 — Serverless라 유휴시 비용 거의 없음 | 좋음 — 상시 기동 필요(self-hosted 시 유휴비용 발생) |
+| 배치 워크로드 적합성 | 좋음 — 로드 자체가 무과금, 쿼리만 과금 | 좋음 — warehouse auto-suspend로 유휴비용 최소화 | 좋음 — Serverless라 유휴시 비용 거의 없음 | 좋음 — Cloud도 idle scaling(유휴 시 컴퓨트 0)으로 배치에 적합 |
 | 운영 부담 | 서버리스, 관리 불필요 | 서버리스, 관리 불필요 | Serverless면 낮음 / 프로비저닝형이면 클러스터 관리 필요 | self-hosted면 높음(패치·백업·샤딩), Cloud면 중간 |
 | 기존 인프라와의 리전 정합성 | GCP `asia-northeast3`(서울) 존재, 단 AWS와 별도 클라우드 | AWS 위탁 시 `ap-northeast-2` 지원 여부 확인 필요 | AWS 네이티브 — RDS와 **동일 리전, 크로스클라우드 이동 없음** | 배치를 어디에 두느냐에 따라 다름 |
 | 이벤트 파이프라인(P0-12)과의 연계 | **이미 BigQuery Export로 전제됨 — 추가 이동 불필요** | 이벤트를 GCP→Snowflake로 재이동 필요(크로스클라우드 egress) | 이벤트를 GCP→AWS로 재이동 필요(크로스클라우드 egress) | 이벤트를 GCP→ClickHouse로 재이동 필요 |
@@ -42,13 +42,14 @@
 |---|---|---|---|---|
 | 스토리지 | $0.02/GB/월(활성, 90일 이내) → **TB당 약 $20/월**, 90일 초과분은 **TB당 $10/월**로 절반 | 스토리지 별도 과금, TB당 대략 **$23~40/월**(리전별) | RA3 관리형 스토리지, TB당 대략 **$20대/월** | 모든 티어 공통 **TB당 $25.30/월** |
 | 컴퓨트(배치 쿼리) | **$6.25/TB 스캔**(온디맨드), 월 1TB 스캔 무료 | Warehouse 크레딧: X-Small 1credit/h ~ Medium 4credit/h. Standard 크레딧 단가 US 기준 **$2/credit**, 비US 리전은 **30~60% 프리미엄** | **$0.375/RPU-hour**(us-east-1 기준), 최소 4RPU(=$1.50/h)부터 60초 단위 과금 | Compute unit-hour당 **$0.22(Basic)~$0.39(Enterprise)** |
-| 유휴 시 과금 | **없음** — 쿼리를 안 돌리면 $0 | Auto-suspend 설정 시 **없음** | Serverless는 사용 시간만 과금 | 상시 기동 필요 — Basic(개발용) 최소 **$67/월**부터 고정 발생 |
-| 배치 1회 실행 감(예시) | 100GB 스캔 배치 쿼리 1회 ≈ **$0.6** | Small(2credit/h) warehouse 10분 가동 ≈ **$0.7~1.3** | 4RPU 10분 가동 ≈ **$0.25** | 6h/일 가동 기준 개발 티어 ≈ **$67/월 고정** |
+| 유휴 시 과금 | **없음** — 쿼리를 안 돌리면 $0 | Auto-suspend 설정 시 **없음** | Serverless는 사용 시간만 과금 | idle scaling 설정 시 **없음**(스토리지만 계속 과금) |
+| 배치 1회 실행 감(예시) | 100GB 스캔 배치 쿼리 1회 ≈ **$0.6** | Small(2credit/h) warehouse 10분 가동 ≈ **$0.7~1.3** | 4RPU 10분 가동 ≈ **$0.25** | Basic(0.2181/unit-h) 유닛 1개 10분 가동 ≈ **$0.04** |
 
 **해석**:
-- 배치 위주(하루 1~수회, 짧은 실행)라는 전제와 가장 잘 맞는 건 **BigQuery**(로드 자체 무과금 + 유휴 시 $0)와 **Redshift Serverless**(유휴 시 $0) — 둘 다 "쓴 만큼만" 구조.
-- **Snowflake**도 auto-suspend로 유휴비용을 없앨 수 있지만, 한국(비US) 리전 크레딧 프리미엄(최대 60%)이 붙어 단가 자체가 더 비쌈.
-- **ClickHouse Cloud**는 상시 기동이 기본 전제라 배치처럼 짧게 쓰고 끄는 워크로드엔 구조적으로 불리함(최소 월 고정비 발생). self-hosted로 돌리면 이 고정비는 없어지지만 그만큼 운영 부담이 팀으로 넘어옴.
+- ~~ClickHouse Cloud는 상시 기동이 필요해 배치에 불리하다~~ → **정정**: ClickHouse Cloud도 idle timeout이 지나면 컴퓨트가 자동으로 0으로 스케일다운되고, 새 쿼리가 오면 자동 재기동됨(수동으로 서비스를 완전히 pause하는 기능도 별도로 있음). 배치처럼 짧게 쓰고 끄는 워크로드에도 구조적으로 불리하지 않음 — 오히려 단가 자체(compute unit-hour당 $0.22~, 스토리지 TB당 $25.30)는 네 후보 중 낮은 편.
+- 배치 위주(하루 1~수회, 짧은 실행)라는 전제와 잘 맞는 건 **BigQuery·Redshift Serverless·ClickHouse Cloud**(모두 유휴 시 컴퓨트 $0) — "쓴 만큼만" 구조. Snowflake만 auto-suspend를 별도로 설정해야 같은 효과가 남.
+- **Snowflake**는 한국(비US) 리전 크레딧 프리미엄(최대 60%)이 붙어 단가 자체가 더 비쌈.
+- **ClickHouse**의 실질적 단점은 비용이 아니라 **운영 부담**(자체 SQL 방언, dbt/BI 생태계가 3사 대비 얇음, self-hosted 선택 시 패치·백업 직접 관리) — Alan 1인에게 P0가 집중된 지금 시점엔 이 학습·운영 비용이 단가보다 더 중요한 변수.
 - 크로스클라우드 egress(AWS RDS → GCP BigQuery, 또는 반대 방향)는 위 표에 없음 — 이건 실제 배치 볼륨이 나와야 계산 가능(미확정 사항 참고).
 
 ---
@@ -58,7 +59,7 @@
 - **BigQuery**: 이벤트 쪽은 이미 결정된 것과 같음(P0-12). L1(RDS)→BigQuery 배치 이동만 AWS→GCP 크로스클라우드가 되어 egress 비용/지연이 생기지만, **이벤트+DB를 한 곳에서 조인**할 수 있다는 이득이 큼. 이 문서의 비교 기준 대부분에서 "추가 이동이 없다"는 항목을 이벤트 쪽에서 이미 확보한 상태.
 - **Redshift**: L1(RDS)과 **동일 리전·동일 클라우드**라 정본 DB 이동은 가장 저렴/단순. 하지만 이벤트(BigQuery)를 다시 AWS로 끌고 와야 해서, 결국 어느 한쪽은 크로스클라우드 이동이 발생함 — "이동을 어느 방향으로 감당할지"의 문제로 귀결.
 - **Snowflake**: 멀티클라우드라 이론상 양쪽과 다 붙을 수 있지만, 실제로는 어느 한 클라우드에 프로비저닝되므로 위 두 후보와 동일한 트레이드오프를 갖고 추가 비용(멀티클라우드 데이터 전송)이 발생할 수 있음. 대신 벤더 중립성·풍부한 커넥터 생태계가 강점.
-- **ClickHouse**: 비용은 가장 낮게 만들 수 있으나(self-hosted), 배치 파이프라인 운영·스키마 마이그레이션·백업을 팀이 직접 감당해야 함. 지금 Alan 1인에게 P0 8건이 집중된 상황(alan-실행순서.md 참고)에서 추가 운영 부담을 지는 선택.
+- **ClickHouse**: 단가·배치 적합성(idle scaling) 자체는 나쁘지 않음. 진짜 트레이드오프는 **생태계**(dbt/BI 커넥터가 3사 대비 얇음, 독자 SQL 방언)와 **운영 부담**(self-hosted 선택 시 패치·백업·샤딩을 팀이 직접 감당) — 지금 Alan 1인에게 P0 8건이 집중된 상황(alan-실행순서.md 참고)에서 신규 학습·운영 비용을 지는 선택이 되기 쉬움.
 
 ## 초안 권고
 
@@ -86,3 +87,4 @@
 - [Snowflake Pricing Explained 2026 (FinOps Daily)](https://finopsdaily.com/snowflake-pricing/)
 - [ClickHouse Pricing Teardown 2026 (DEV Community)](https://dev.to/beton/clickhouse-pricing-teardown-2026-209h)
 - [ClickHouse Cloud Pricing Guide (Pulse Support)](https://pulse.support/kb/clickhouse-cloud-pricing-guide)
+- [How the 5 major cloud data warehouses really bill you (공식, ClickHouse)](https://clickhouse.com/blog/how-cloud-data-warehouses-bill-you) — idle scaling/자동 일시정지 근거
