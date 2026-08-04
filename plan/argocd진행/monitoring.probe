@@ -1,0 +1,59 @@
+- applicationSet 목록
+```sh
+CTX=arn:aws:eks:ap-northeast-2:699016088228:cluster/eks_prod
+kubectl get applicationsets -A --context $CTX
+```
+
+- applicationset 조회
+```sh
+CTX=arn:aws:eks:ap-northeast-2:699016088228:cluster/eks_prod
+kubectl get applicationset gymboxx-workloads -n argocd --context $CTX -o yaml
+```
+
+- ECR 확인
+```sh
+AWS_REGION=ap-northeast-2
+AWS_ACCOUNT_ID=699016088228
+REPO_NAME=your-repo-name
+
+# ECR 레포지토리 목록 확인
+aws ecr describe-repositories \
+  --region $AWS_REGION \
+  --registry-id $AWS_ACCOUNT_ID \
+  --query 'repositories[*].[repositoryName,repositoryUri]' \
+  --output table
+```
+
+- 특정 레포지토리의 이미지 목록 확인
+```sh
+REPO=prod
+PREFIX="admin-server"
+
+aws ecr describe-images \
+  --repository-name $REPO \
+  --region ap-northeast-2 \
+  --output json |
+jq -r --arg p "$PREFIX" '
+.imageDetails[]
+| select(any(.imageTags[]?; startswith($p)))
+| [
+    (.imageTags | join(",")),
+    .imagePushedAt
+  ]
+| @tsv
+'
+```
+- git log 확인
+```sh
+FULL_REPOSITORY="suppliesfitness/platform-gitops"
+gh api --method GET "repos/$FULL_REPOSITORY/commits" \
+  -F per_page=5 \
+  --jq '.[] | "\(.commit.author.date)  \(.sha[0:7])  \(.commit.message)"'
+```
+
+- 배포 확인
+```sh
+CTX=arn:aws:eks:ap-northeast-2:699016088228:cluster/eks_prod
+kubectl get deploy hq-server-prod -n default --context=$CTX \
+  -o jsonpath='{.spec.template.spec.containers[0].image}{"\n"}'
+```
