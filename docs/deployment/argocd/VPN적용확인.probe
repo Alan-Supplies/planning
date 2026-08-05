@@ -1,0 +1,15 @@
+- webhook secret 확인
+
+```text
+terraform output -json | jq -r '.argocd_webhook_secret.value'
+```
+
+- ingress 등록 확인
+```sh
+CTX=arn:aws:eks:ap-northeast-2:699016088228:cluster/preppers-cluster
+kubectl get ingress argocd-ui-alb -n argocd --context=$CTX
+```
+- http 호출 확인
+```sh
+curl -sk -o /dev/null -w '%{http_code}\n' -H 'Host: prod-gbx-argocd.supp.fitness' https://internal-eks-prod-argocd-ui-536345078.ap-northeast-2.elb.amazonaws.com/
+```
