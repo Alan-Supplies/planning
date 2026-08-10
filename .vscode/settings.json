@@ -32,5 +32,8 @@
       "username": "readonly_user",
       "password": "preppers123@"
     }
-  ]
+  ],
+  "probe.mysql.host": "gymboxx-dev.cxubxpnokvfs.ap-northeast-2.rds.amazonaws.com",
+  "probe.mysql.database": "gymboxx",
+  "probe.mysql.user": "readonly_ssl"
 }

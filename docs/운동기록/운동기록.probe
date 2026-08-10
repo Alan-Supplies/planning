@@ -1,32 +1,210 @@
-id: 51758
-name: 김성욱
-nickname: Alan
+# 운동 기록 출석 플로우
 
+USER APP 출석 → PASS 앱 바코드 스캔 → 소켓 수신까지, 앱 없이 재현하기 위한 문서.
+재현 스크립트: `replay-workout-flow.js` (같은 폴더)
 
+## 테스트 계정 / 지점 (dev)
+
+```text
+user_id        : 51758  (김성욱 / Alan)
+gym_id         : 494
+gym_unique_id  : 000134  (테스트 지점)
+device_id      : 9000000000004940  (PASS 기기)
+```
+
+## 관련 저장소
+
+| 역할 | 저장소 | 비고 |
+|---|---|---|
+| USER APP 서버 | `gymboxx-app-server` | prefix `/app`, 로그인·바코드 생성 |
+| PASS 기기 서버 | `gymboxx-pass-server` | prefix `/pass`, 바코드 검증·출석 기록 |
+| 앱 소켓 | `app-web-socket` | API Gateway WebSocket + Lambda + DynamoDB |
+| ~~admin 소켓~~ | ~~`web-socket-server`~~ | **이 흐름과 무관.** admin 웹 전용(주문·PT·머신) |
+
+`web-socket-server`를 먼저 열면 출석 관련 코드가 하나도 없어 헤매게 된다. 앱으로 가는 소켓은
+`app-web-socket`이다.
+
+## 엔드포인트 (dev)
+
+```text
+APP  : https://dev1.supp.fitness/app
+PASS : https://dev1.supp.fitness/pass
+소켓 REST (today-workout) : https://kun6eu8mq0.execute-api.ap-northeast-2.amazonaws.com/dev
+소켓 WS   (앱이 붙는 곳)  : wss://bq6ert948k.execute-api.ap-northeast-2.amazonaws.com/dev
+```
+
+소켓 주소 두 개는 같은 serverless 서비스가 만든 **서로 다른 API**다. REST 쪽은 pass-server가
+호출하는 트리거이고, WS 쪽은 앱이 접속하는 곳이다. REST 주소는 eks_dev `default/env` configMap의
+`APP_WEB_SOCKET_ENDPOINT`, WS 주소는 `app-web-socket/env.yml`의 `WEB_SCOKET_ENDPOINT`에 있다.
+
+## 전체 흐름
+
+```text
+[USER APP] 로그인 (PIN 또는 refresh_token)
+    └ GET  /app/user/pin?phone=            → 알림톡 4자리 PIN
+      GET  /app/user/pin/validation?...    → access_token(2h) + refresh_token(365d)
+      PUT  /app/user/refresh-token         → access_token 재발급
+
+[USER APP] 출석하기 버튼 = 바코드 생성
+    └ GET  /app/user/{userId}/barcode      → { barcode: "1000002313368" }
+                                             ※ 60초 후 INACTIVE
+
+[PASS APP] 기기 로그인
+    └ POST /pass/auth/login                → { token }  (device token, 1년)
+
+[PASS APP] 바코드 스캔 = 출석 처리
+    └ POST /pass/user/barcode-access       → { access_type, order, challenge, user_id }
+        └ access_history INSERT
+        └ pingWebSocketServer()  ← 3번 "소켓으로 앱에 전달"의 실체
+             GET {소켓REST}/today-workout/{userId}?access_history_id=&gym_id=
+
+[APP-WEB-SOCKET] DynamoDB에서 userId의 connectionId 조회 → postToConnection
+    └ 앱이 payload 수신 → 출석 상태로 전환 (4번)
+```
+
+## 소켓 payload
+
+```json
 {
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJneW1fdW5pcXVlX2lkIjoiMDAwMTM0IiwiZGV2aWNlX2lkIjoiOTAwMDAwMDAwMDAwNDk0MCIsImd5bV9pZCI6NDk0LCJneW1fbmFtZSI6Iu2FjOyKpO2KuCDsp4DsoJAiLCJpYXQiOjE3ODYwNzg2MDksImV4cCI6MTgxNzYxNDYwOX0.WiHJCVE_zYWfPktrSU7ngn6nOd2LTNDoq7cMst3-2Pk"
+  "type": "ACCESS",
+  "access_history_id": 12345,
+  "access_date": "2026-08-10T03:00:00.000Z",
+  "gym_id": 494,
+  "current_gym_workout": { "CHEST": 0.2, "BACK": 0.1, "SHOULDER": 0, "ARM": 0, "LEG": 0.7, "CARDIO": 0 },
+  "all_gym_workout": []
 }
-
-- login
-```sh
-curl -X 'POST' \
-  'https://dev1.supp.fitness/pass/auth/login' \
-  -H 'accept: application/json' \
-  -H 'Content-Type: application/json' \
-  -d '{
-  "gym_unique_id": "000134",
-  "device_id": "9000000000004940"
-}'
 ```
 
-- barcode-access
-```sh
-curl -X 'POST' \
-  'https://dev1.supp.fitness/pass/user/barcode-access' \
-  -H 'accept: application/json' \
-  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJneW1fdW5pcXVlX2lkIjoiMDAwMTM0IiwiZGV2aWNlX2lkIjoiOTAwMDAwMDAwMDAwNDk0MCIsImd5bV9pZCI6NDk0LCJneW1fbmFtZSI6Iu2FjOyKpO2KuCDsp4DsoJAiLCJpYXQiOjE3ODYwNzg2MDksImV4cCI6MTgxNzYxNDYwOX0.WiHJCVE_zYWfPktrSU7ngn6nOd2LTNDoq7cMst3-2Pk' \
-  -H 'Content-Type: application/json' \
-  -d '{
-  "barcode": "1000002313368"
-}'
+`all_gym_workout`은 `utils.ts`에서 통째로 주석 처리돼 있어 항상 빈 배열이다.
+
+## 막히는 지점 (미리 알아야 할 것)
+
+1. **바코드 수명 60초** — `app-server/src/modules/user/user.service.ts:1280`.
+   `setTimeout(..., 60000)`이고 주석은 `// TODO: 나중에 15초로 다시 변경해야함.`
+   함수 이름은 `inactivateBarcodeAfter15Seconds`인데 실제 값은 60초다. 수동 테스트라면
+   바코드 생성 → 스캔을 60초 안에 끝내야 한다.
+
+2. **그 타이머는 프로세스 메모리에만 있다** — 파드가 재시작되면 타이머가 사라져 해당 바코드는
+   영구 ACTIVE로 남는다. dev에서 옛날 바코드가 아직 먹히는 경우가 이것이다.
+
+3. **`barcode` 테이블에 만료 시각 컬럼이 없다** — `id / number / status / created_at / user`뿐.
+   pass-server의 검증도 `barcode.status = ACTIVE` and `user.status = ACTIVE`뿐이고 시간을 보지
+   않는다(`pass-server/src/modules/user/user.dao.ts:109`). 따라서 DB에 행을 직접 넣으면
+   만료 없는 테스트 바코드를 만들 수 있다.
+
+4. **REENTER는 소켓 push가 없다** — `handleAccessHistory`(`pass-server` `user.service.ts:317`)는
+   `ACCESS`와 `REVISIT`에서만 ping한다. 같은 날 두 번째 스캔부터는 앱에 아무것도 안 간다.
+   테스트를 반복하면 여기에 걸린다.
+
+5. **ping 실패가 조용히 묻힌다** — `pingWebSocketServer`(`user.service.ts:421`)는 try/catch로
+   `console.log('소켓 서버 ping 실패')`만 찍는다. barcode-access는 그대로 200을 반환하므로
+   **응답만 봐서는 소켓이 갔는지 알 수 없다.** 반드시 소켓 수신을 따로 확인해야 한다.
+
+6. **소켓은 인증이 없다** — `$connect`는 `user_id`/`gym_id` 쿼리스트링만 보고, `today-workout`도
+   무인증이다. 그래서 앱·PASS 기기 없이 재현이 가능하다.
+
+## 로그인을 편하게 하는 방법
+
+`GET /app/user/{userId}/barcode`는 `JwtAuthGuard` + `UserInterceptor` 대상이라 access_token이
+필요하다. 이 토큰을 얻는 경로를 편한 순서대로 정리한다.
+
+### 방법 1 (채택): 테스트 토큰 자체 발급 — secret·PIN·DB 불필요
+
+`refreshUserToken`(`app-server/src/modules/user/user.service.ts:379`)의 흐름:
+
+```ts
+const isTokenExpired = this.authService.isTokenExpired(refreshToken)   // exp가 과거면 true
+const decoded = isTokenExpired
+  ? this.authService.decodeTokenWithoutVerify(refreshToken)  // = jwtService.decode(), 서명 검증 안 함
+  : this.authService.decodeToken(refreshToken)
+const user = await this.userDAO.getUserEntityById(decoded.user_id)     // user_id만 신뢰
+// DB에 저장된 refresh_token과 대조하지 않는다
 ```
+
+즉 `{ user_id, device_id, exp: 과거 }` payload를 **아무 키로나 HS256 서명**한 JWT를
+`PUT /app/user/refresh-token`(무인증, `@Public`)에 던지면, 만료 토큰이라 서명 검증을 건너뛰고
+`user_id`만 읽어 정상 access_token을 발급한다. 스크립트가 이걸 자동으로 만든다(`buildTestRefreshToken`).
+
+> ⚠️ 이건 dev 테스트 편의로 쓰지만 **인증 우회 취약점**이다. 같은 코드가 prod에도 있어
+> 임의 user_id로 남의 access_token을 발급받을 수 있다. → `## 보안: 별도 이슈` 참고.
+
+### 방법 2: 실제 refresh_token 재사용 — 취약점을 안 쓰는 정상 경로
+
+PIN 로그인을 최초 1회만 하면 refresh_token(365d)이 나오고, 이후 `PUT /refresh-token`으로
+무기한 갱신된다. DB의 `user.refresh_token`은 bcrypt 해시(`user.dao.ts:1000`,
+`hashSync(getTokenSignature(token), 10)`)라 거기서 원본을 꺼내 재사용하는 건 불가능하다.
+
+```sh
+export GYMBOXX_REFRESH_TOKEN='...'   # 최초 1회 PIN 로그인으로 획득
+```
+
+### 안 되는 방법: pass-server 토큰 재사용
+
+JWT secret은 실제로 동일하다(두 서버가 eks_dev `default`의 같은 `env` configMap과 `credentials`
+secret 공유). 그래서 서명 검증은 통과하지만, `UserInterceptor`가
+`user.user_id !== +params.userId`를 검사한다(`app-server/src/common/interceptor/user.interceptor.ts:50`).
+pass 토큰 payload에는 `user_id`가 없어 `403 userId not matched`가 난다. 401이 아니라 403인 것이
+secret 동일의 증거다.
+
+## 실행
+
+```sh
+# 기본: 테스트 토큰 자체 발급 → 전체 흐름 자동 재현 (아무 준비 없이 바로 됨)
+node docs/운동기록/replay-workout-flow.js
+
+# 정상 경로로 하고 싶으면 (취약점 미사용)
+GYMBOXX_REFRESH_TOKEN='...' node docs/운동기록/replay-workout-flow.js
+# 또는 최초 1회 PIN 로그인 (알림톡 수신 필요) → refresh_token 출력됨
+GYMBOXX_PHONE=01012345678 node docs/운동기록/replay-workout-flow.js
+
+# 앱 대신 소켓 수신만 대기 (실제 앱/PASS 기기로 테스트할 때)
+node docs/운동기록/replay-workout-flow.js --listen
+
+# access_history_id 만 알면 소켓 push 재발사
+node docs/운동기록/replay-workout-flow.js --ping 12345
+```
+
+## 수동 확인용 curl
+
+- PASS 기기 로그인
+
+```sh
+curl -X POST 'https://dev1.supp.fitness/pass/auth/login' \
+  -H 'Content-Type: application/json' \
+  -d '{"gym_unique_id":"000134","device_id":"9000000000004940"}'
+```
+
+- 바코드 생성 (USER APP access_token 필요)
+
+```sh
+curl -X GET 'https://dev1.supp.fitness/app/user/51758/barcode' \
+  -H "Authorization: Bearer ${APP_ACCESS_TOKEN}"
+```
+
+- 바코드 스캔 = 출석
+
+```sh
+curl -X POST 'https://dev1.supp.fitness/pass/user/barcode-access' \
+  -H "Authorization: Bearer ${PASS_DEVICE_TOKEN}" \
+  -H 'Content-Type: application/json' \
+  -d '{"barcode":"1000002313368"}'
+```
+
+- 소켓 push 만 재발사
+
+```sh
+curl -X GET 'https://kun6eu8mq0.execute-api.ap-northeast-2.amazonaws.com/dev/today-workout/51758?access_history_id=12345&gym_id=494'
+```
+
+## 보안: 별도 이슈
+
+위 "방법 1"은 편의로 쓰지만 정식 취약점이다. `refreshUserToken`이 만료된 refresh_token을
+`decodeTokenWithoutVerify`(서명 검증 없음)로 열고 DB 저장값과 대조도 하지 않아서,
+**아무 키로나 서명한 `{ user_id: <임의> }` 토큰으로 임의 회원의 access_token을 발급받을 수 있다.**
+dev·prod 동일 코드. 테스트 스크립트와 분리해 보안 이슈로 처리해야 한다.
+(관련: `app-server` `user.service.ts:379`, `auth.service.ts:55` `decodeTokenWithoutVerify`)
+
+## 참고: 별도로 기록해둘 이슈
+
+바코드 번호는 `Math.floor(1000000000000 + Math.random() * 9000000) + 2000`으로 생성되고 중복
+검사가 없다. 번호 공간이 약 900만이라 충돌 가능성이 있다. (2000 미만은 VIP·마케팅 바코드 예약)

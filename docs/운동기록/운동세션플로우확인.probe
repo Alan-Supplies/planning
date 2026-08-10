@@ -1,0 +1,33 @@
+@import ./local.env
+@import ./test.env
+
+```sh
+echo {{userId}}
+```
+
+- 운동 온보딩 여부 (이번에 51758이 비어 있던 항목):
+```sql
+SELECT * FROM user_exercise_metadata WHERE user_id = {{userId}};
+```
+
+- 세션 이력과 미종료 세션:
+```sql
+SELECT id, gym_id, access_history_id, started_at, end_at
+FROM user_exercise_session
+WHERE user_id = {{userId}}
+ORDER BY id DESC LIMIT 10;
+```
+
+
+```sql
+SELECT ah.id,
+       ah.type,
+       ah.method,
+       ah.gym_id,
+       CONVERT_TZ(ah.created_at,'+00:00','+09:00') AS created_kst,
+       TIMESTAMPDIFF(MINUTE, ah.created_at, UTC_TIMESTAMP()) AS min_ago
+FROM access_history ah
+WHERE ah.user_id = {{userId}}
+  AND ah.created_at >= CONVERT_TZ(CONCAT(DATE(CONVERT_TZ(UTC_TIMESTAMP(),'+00:00','+09:00')),' 00:00:00'),'+09:00','+00:00')
+ORDER BY ah.id DESC;
+```
