@@ -1,0 +1,239 @@
+@startuml
+
+!theme plain
+top to bottom direction
+skinparam linetype ortho
+
+class exercise {
+   name: varchar(255)
+   type: varchar(30)
+   description: varchar(255)
+   image_url: text
+   video_url: text
+   unit: varchar(30)
+   status: varchar(30)
+   created_at: timestamp
+   id: int
+}
+class gift {
+   created_at: timestamp
+   name  /* 선물 이름 */: varchar(100)
+   gym_id: int
+   description  /* 선물 설명 */: text
+   expiration_days: int
+   type: varchar(40)
+   id: int
+}
+class gym {
+   unique_id  /* 센터 고유 번호 */: varchar(10)
+   name  /* 지점명 */: varchar(100)
+   english_name: varchar(150)
+   tel  /* 지점 연락처 */: varchar(20)
+   postcode  /* 지점 우편번호 */: varchar(10)
+   gym_region_id  /* 지역 테이블 id */: int unsigned
+   address  /* 지점 주소 */: varchar(200)
+   address_detail  /* 지점 상세주소 */: varchar(200)
+   map_image_url  /* 지점 지도 이미지(실내) */: text
+   matterport_url  /* 메타포트 url */: text
+   business_hour  /* 지점 영업시간 */: varchar(100)
+   latitude  /* 위도 */: varchar(50)
+   longitude  /* 경도 */: varchar(50)
+   size  /* 센터 크기(m2) */: smallint
+   has_shower_booth: tinyint(1)
+   has_sportswear: tinyint(1)
+   description  /* 지점 설명 */: text
+   status  /* ACTIVE, INACTIVE, CLOSED(폐업) */: varchar(20)
+   updated_at: timestamp
+   created_at: timestamp
+   food_order_status: varchar(30)
+   absence_from  /* 부재 시작 시간 */: timestamp
+   pt_bidding: tinyint(1)
+   attrs: json
+   id: int
+}
+class node5 as "gym_region  /* 지점 지역 구분 테이블 */" {
+   name  /* 지역명(지역 구분) */: varchar(128)
+   created_at  /* 생성일시 */: datetime
+   id: int unsigned
+}
+class payment_card {
+   user_id: int
+   number  /* 카드번호 */: varchar(20)
+   code: varchar(10)
+   name: varchar(30)
+   flag: varchar(50)
+   type: varchar(50)
+   expire_year  /* 만료 연도 */: year
+   expire_month  /* 만료 월 */: varchar(2)
+   birth  /* 카드 소유자 생년월일 */: varchar(20)
+   company_registration_number  /* 사업자 등록번호 */: varchar(20)
+   customer_uid  /* 빌링키와 1:1로 대응하는 값 */: varchar(30)
+   is_favorite  /* 주 거래 카드 유무 */: tinyint(1)
+   status  /* ACTIVE, INACTIVE */: varchar(20)
+   created_at: timestamp
+   id: int
+}
+class pt_order {
+   type: varchar(30)
+   merchant_uid: varchar(60)
+   imp_uid  /* pt 일반 결제 imp_uid */: varchar(100)
+   t_id: varchar(100)
+   user_id: int
+   payment_card_id: int
+   amount  /* pt 상품 결제 금액 */: int
+   lesson_count  /* pt 횟수 */: smallint
+   extra_lesson_count  /* 추가, 다운 레슨수 */: int
+   device: varchar(20)
+   start_at  /* pt 시작일 */: date
+   subscription_started_at: date
+   expire_at  /* pt 만료일 */: date
+   status  /* ACTIVE, INACTIVE, HOLD(중지), REFUNDED(환불) */: varchar(20)
+   bill_rate  /* 수업 정산비율 */: decimal(4,3)
+   created_at: timestamp
+   pt_product_register_id: int
+   review: text
+   review_at  /* pt review 작성일 */: timestamp
+   review_status  /* NOT_YEY, PASSED, COMPLETE */: varchar(20)
+   refund_price  /* 환불 금액 */: int
+   is_transferred  /* 이관 여부 */: tinyint(1)
+   id: int
+}
+class pt_product {
+   trainer_id: int
+   name  /* 상품이름 */: varchar(30)
+   type  /* PT 상품 종류: ONE_TO_ONE(1:1), TWO_TO_ONE(2:1) */: varchar(30)
+   description  /* 상품설명 */: mediumtext
+   tags: mediumtext
+   welcome_message: mediumtext
+   price  /* 가격 */: int
+   selling_price  /* 판매가격 */: int
+   lesson_count  /* 수업 횟수 */: int
+   time  /* 시간 */: int
+   priority  /* 상품 우선 순위 */: int
+   is_main: tinyint(1)
+   status  /* ACTIVE(판매 진행중), INACTIVE(판매 마감) */: varchar(20)
+   created_at: timestamp
+   is_transferred  /* 이관 상품 여부 */: tinyint(1)
+   event: text
+   id: int
+}
+class pt_product_register {
+   pt_product_id: int
+   gym_id: int
+   status  /* ACTIVE, INACTIVE */: varchar(20)
+   created_at: timestamp
+   gift_id: int
+   id: int
+}
+class trainer {
+   name  /* 트레이너 이름 */: varchar(30)
+   phone  /* 트레이너 연락처 */: varchar(30)
+   password  /* 계정 비밀번호 */: varchar(100)
+   gender  /* 직원 성별: MALE, FEMALE, UNIDENTIFIED */: varchar(20)
+   certificates  /* 자격증 */: text
+   career  /* 경력 */: text
+   description  /* 설명 */: text
+   available_time  /* 수업 가능 시간 */: text
+   image_url  /* 이미지 파일 url */: text
+   fcm_token: text
+   has_pt_subscription: tinyint(1)
+   service_agreement: tinyint(1)
+   status  /* ACTIVE, INACTIVE */: varchar(20)
+   created_at: timestamp
+   removed_at  /* 삭제일 */: timestamp
+   tags: json
+   bill_rate  /* 정산율 */: decimal(4,3)
+   bank_name: varchar(50)
+   bank_account_number: varchar(50)
+   business_type: varchar(30)
+   identification_number: varchar(30)
+   business_registration_number: varchar(100)
+   business_registration_img_url: text
+   id: int
+}
+class user {
+   name: varchar(30)
+   nickname  /* 닉네임 */: varchar(50)
+   phone: varchar(100)
+   email: varchar(255)
+   passport_image_url: text
+   gender  /* MALE, FEMALE, UNIDENTIFIED */: varchar(20)
+   status  /* ACTIVE, INACTIVE, BLOCKED, DELETED */: varchar(20)
+   refresh_token: varchar(255)
+   is_suspended: tinyint(1)
+   birth_of_date: date
+   is_identified  /* 본인인증 진행 유무 */: tinyint(1)
+   service_agreement  /* 이용약관 동의 유무 */: tinyint(1)
+   payment_agreement  /* 결제 이용 동의 */: tinyint(1)
+   image_url: text
+   profile_image_url  /* 프로플 사진 */: text
+   profile_message  /* 프로플 상태 메세지 */: text
+   fcm_token  /* 회원의 fcm token */: text
+   app_push_agreement  /* 앱 푸시 동의 */: tinyint(1)
+   system_push_agreement  /* 시스템 푸시 동의 */: tinyint(1)
+   marketing_push_agreement  /* 앱 푸시 동의 */: tinyint(1)
+   push_activation_requested_at  /* 최근 푸시 연동 요청일 */: timestamp
+   unique_key  /* IAM PORT 개인고유식별키 */: text
+   azure_person_id  /* AZURE FACE API PersonId */: varchar(100)
+   vaccination_date  /* 회원 백신 접종 완료일 */: date
+   additional_vaccination_date  /* 회원 최근 추가 백신 접종일 */: date
+   transfer_status  /* NONE: 해당없음, IN_PROGRESS: 이관중, COMPLETE: 이관완료 */: varchar(30)
+   instagram_id  /* 인스타그램 id(30자 이하) */: varchar(50)
+   legacy_member_id  /* 이전 CRM member_id */: int
+   legacy_log_image_file_url  /* 이전 CRM 회원정보 캡처 파일 */: text
+   updated_at: timestamp
+   created_at: timestamp
+   id: int
+}
+class user_workout_exercise_log {
+   user_workout_log_id: int
+   exercise_id: int
+   duration: int
+   set: int
+   memo: text
+   tag: varchar(30)
+   status: varchar(30)
+   created_at: timestamp
+   id: int
+}
+class user_workout_log {
+   user_id: int
+   workout_card_id: int
+   status: varchar(30)
+   is_auto_done: tinyint(1)
+   created_at: timestamp
+   id: int
+}
+class workout_card {
+   trainer_id: int
+   pt_product_id: int
+   pt_order_id: int
+   title: varchar(255)
+   workout_part: varchar(255)
+   description: text
+   image_url: text
+   type: varchar(30)
+   status: varchar(30)
+   updated_at: timestamp
+   created_at: timestamp
+   id: int
+}
+
+gift                       -[#595959,plain]-^  gym                       : "gym_id:id"
+gym                        -[#595959,plain]-^  node5                     : "gym_region_id:id"
+payment_card               -[#595959,plain]-^  user                      : "user_id:id"
+pt_order                   -[#595959,plain]-^  payment_card              : "payment_card_id:id"
+pt_order                   -[#595959,plain]-^  pt_product_register       : "pt_product_register_id:id"
+pt_order                   -[#595959,plain]-^  user                      : "user_id:id"
+pt_product                 -[#595959,plain]-^  trainer                   : "trainer_id:id"
+pt_product_register        -[#595959,plain]-^  gift                      : "gift_id:id"
+pt_product_register        -[#595959,plain]-^  gym                       : "gym_id:id"
+pt_product_register        -[#595959,plain]-^  pt_product                : "pt_product_id:id"
+user_workout_exercise_log  -[#595959,plain]-^  exercise                  : "exercise_id:id"
+user_workout_exercise_log  -[#595959,plain]-^  user_workout_log          : "user_workout_log_id:id"
+user_workout_log           -[#595959,plain]-^  user                      : "user_id:id"
+user_workout_log           -[#595959,plain]-^  workout_card              : "workout_card_id:id"
+workout_card               -[#595959,plain]-^  pt_order                  : "pt_order_id:id"
+workout_card               -[#595959,plain]-^  pt_product                : "pt_product_id:id"
+workout_card               -[#595959,plain]-^  trainer                   : "trainer_id:id"
+@enduml
