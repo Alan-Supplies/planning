@@ -1,0 +1,45 @@
+1. user_exercise_set_history
+```sql
+select * from user_exercise_set_history
+  order by user_exercise_session_history_id desc
+ limit 10;
+```
+2. weight_value / weight_type
+```sql
+select count(*) from weight_value;
+```
+
+3. challenge_calendar
+start_at 이 TZ 미설정으로 어긋남
+```sql
+select * from challenge_calendar
+  order by id desc
+  limit 10;
+```
+
+4. consecutive_attendance_week
+```sql
+select * from consecutive_attendance_week
+  order by id desc
+  limit 10;
+```
+
+5. body_part
+```sql
+select * from body_part;
+```
+
+6. machine unique_code 없는 것
+```sql
+select gm.gym_id, gym.name,
+  gm.machine_id, gm.created_at
+  from gym_machine gm
+  left join gym on gm.gym_id = gym.id
+  where gm.unique_code is null
+    and gm.status = 'active';
+```
+```sql
+select count(*) from gym_machine
+  where unique_code is null
+    and status = 'active';
+```
