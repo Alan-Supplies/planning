@@ -2,6 +2,26 @@
 
 > 오늘 대화 정리본. 집에서 이어서 진행할 때 이 문서부터 읽는다.
 
+## 2026-08-20 진행 체크포인트
+
+### 완료
+
+- CDC 원천 데이터를 적재할 S3 구조를 결정했다. 세부 설계 문서는 추가 보강이 필요하다.
+- `gymboxx_dev`의 binlog 설정을 완료했다.
+- AWS DMS 초기 설정을 IaC로 작성해 `feature/aws-dms` 브랜치에 커밋했다.
+
+### 미완료
+
+- AWS DMS CDC task 적용과 실행.
+- 합성 운동기록 생성·변경 후 MySQL→S3 복제 결과 확인.
+
+### 오늘 밤 이어서 할 다음 행동
+
+1. `feature/aws-dms`의 IaC 적용 상태를 확인한다.
+2. DMS source·target endpoint 연결 테스트를 통과시킨다.
+3. 운동기록 두 테이블의 CDC task를 시작한다.
+4. 합성 운동기록을 생성·변경하고 S3 반영 결과를 확인해 증거를 기록한다.
+
 ## 오늘 확정된 것
 
 1. **스택**: MySQL(gymboxx-dev) → AWS DMS(CDC) → S3(Glue Catalog) → Athena(lake sql) → Airflow+dbt core → BigQuery(Warehouse) → Airflow+dbt core → Mart(BigQuery). (`스택결정.md`)
