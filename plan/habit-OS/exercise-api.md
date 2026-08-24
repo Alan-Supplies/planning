@@ -232,7 +232,7 @@ GET /user/{userId}/exercise-session/{exerciseSessionId}
 
 ```
 GET /user/{userId}/exercise-session/exercise-history
-    ?exercise_id=&machine_id=&order=&limit=&offset=
+    ?exercise_id=&machine_id=&limit=&offset=
 ```
 
 **Params**
@@ -240,14 +240,16 @@ GET /user/{userId}/exercise-session/exercise-history
 {
   userId: number
   query: {
-    exercise_id: number
-    machine_id: number
-    order?: "asc" | "desc"
+    exercise_id?: number
+    machine_id?: number
     limit?: number
     offset?: number
   }
 }
 ```
+
+- `exercise_id` 없이 호출할 수 있어야 한다. 미지정 시 사용자의 전체 운동 기록을 조회한다.
+- 조회 결과는 `done_at DESC` 순서로 반환한다.
 
 **Response** `UserExerciseSetHistoryListItem[]`
 ```ts
@@ -578,9 +580,10 @@ POST .../history                      선택한 운동을 machine_id와 함께 �
 ### 이전 기록 참조
 
 ```
-GET /user/{u}/exercise-session/exercise-history?exercise_id=&machine_id=&order=desc&limit=
+GET /user/{u}/exercise-session/exercise-history?exercise_id=&machine_id=&limit=
 ```
-같은 운동의 과거 세트/무게를 불러와 이번 세트 입력값의 기본값으로 사용
+`exercise_id`를 지정하면 같은 운동의 과거 세트/무게를 불러오고, 생략하면 전체 운동 기록을
+`done_at DESC` 순서로 조회한다.
 
 ---
 
