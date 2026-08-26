@@ -1,0 +1,37 @@
+@import .env.probe
+
+# gymboxx-pass-server 로그인 → 바코드 출석
+- 대상: `gymboxx-pass-server` (dev1.supp.fitness/pass, dev난곡점 = gym_unique_id 000005)
+- 인증: `POST /auth/login`(gym_unique_id + device_id)으로 기기용 JWT 발급 → 이후 요청에 Bearer로 사용
+- device_id `{{device_id}}`는 dev DB `pass_device` 테이블에서 gym_id=5(dev난곡점)에 등록된 값
+
+## 로그인
+```sh
+curl -s -w "\nHTTP:%{http_code}\n" -X POST '{{pass_api_base}}/auth/login' \
+  -H 'Content-Type: application/json' \
+  -d '{"gym_unique_id":"{{gym_unique_id}}","device_id":"{{device_id}}"}'
+```
+> 응답의 `token`을 `.env.probe`의 `pass_token`에 갱신해서 아래 요청에 사용한다 (만료 시에만 재발급하면 됨).
+
+## 바코드 출석 - 마케팅 바코드 (dev난곡점 전용, ONE_DAY)
+```sh
+curl -s -w "\nHTTP:%{http_code}\n" -X POST '{{pass_api_base}}/user/barcode-access' \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer {{pass_token}}' \
+  -d '{"barcode":"{{marketing_barcode}}"}'
+```
+
+## 바코드 출석 - VIP 바코드 (전 지점 공통)
+```sh
+curl -s -w "\nHTTP:%{http_code}\n" -X POST '{{pass_api_base}}/user/barcode-access' \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer {{pass_token}}' \
+  -d '{"barcode":"{{vip_barcode}}"}'
+```
+
+## 참고
+- 바코드는 접두사로 유형이 갈린다: `10`으로 시작하면 PASS/SUBSCRIBE 멤버십(`barcode` 테이블, dev DB엔 데이터 없음),
+  `11`이면 ONE_DAY(`one_day_membership_order.barcode_number`). VIP/마케팅 바코드는 별도 테이블
+  (`vip_barcode`, `marketing_barcode`)에서 접두사와 무관하게 우선 매칭된다.
+- dev DB에는 실사용자 바코드(`barcode` 테이블)가 비어 있어 PASS/SUBSCRIBE 흐름은 이 문서로 재현 불가 —
+  필요하면 `readonly_ssl` 계정으로 `barcode` 테이블에 실데이터가 채워진 다른 지점을 먼저 찾아야 한다.

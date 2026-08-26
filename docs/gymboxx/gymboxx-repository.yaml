@@ -1,0 +1,98 @@
+# - `local_base` 기준으로 `local_base/<key>` 가 각 저장소의 실제 로컬 경로다 (예: `~/workspace/supplies/gymboxx-lib`).
+# - `ai-team` 스킬이 다른 로컬 저장소를 대상(target_repo)으로 실행할 때 이 파일로 이름→로컬 경로를 resolve한다 (README.md "target_repo" 절 참고).
+# - `context`가 있는 저장소는 `$AI_TEAM_HOME/<context>`에 컨벤션 문서(`CLAUDE.md`)가 있다 — 없는 저장소는 아직 작성 전.
+# - `risk`는 이 저장소를 건드리는 변경의 기본 위험도 추정이다(결제/인증/광범위 소비자 여부 기준) — 확정값이 아니라 초안이니 다르면 고친다.
+# - `type`은 `package.json` 의존성으로 자동 판별한 것, `risk`는 사람이 검토해야 하는 판단이다.
+
+local_base: ~/workspace/supplies
+
+repositories:
+  gymboxx_barcodepass:
+    github: suppliesfitness/gymboxx_barcodepass
+    type: android-native
+    risk: low          # 레거시 앱, gymboxx-pass-app/kiosk-client로 대체되는 중으로 추정
+
+  gymboxx-app-design-system:
+    github: suppliesfitness/gymboxx-app-design-system
+    type: design-system   # react-native + styled-components
+    risk: low
+
+  gymboxx-app-server:
+    github: suppliesfitness/gymboxx-app-server
+    type: server           # NestJS + TypeORM
+    context: docs/domain/gymboxx-app-server/CLAUDE.md
+    risk: high             # 회원 앱 백엔드, 결제(이니시스/카카오페이/나이스페이) 포함
+
+  gymboxx-branch-admin-client:
+    github: suppliesfitness/gymboxx-branch-admin-client
+    type: client            # React + styled-components
+    risk: medium
+
+  gymboxx-branch-admin-server:
+    github: suppliesfitness/gymboxx-branch-admin-server
+    type: server            # NestJS + TypeORM
+    risk: medium
+
+  gymboxx-community-server:
+    github: suppliesfitness/gymboxx-community-server
+    type: server            # NestJS + TypeORM
+    risk: medium
+
+  gymboxx-headquarter-server:
+    github: suppliesfitness/gymboxx-headquarter-server
+    type: server            # NestJS + TypeORM
+    risk: high              # 본사 운영 권한, 지점 전체에 영향
+
+  gymboxx-headquarters-client:
+    github: suppliesfitness/gymboxx-headquarters-client
+    type: client            # React + styled-components
+    risk: medium
+
+  gymboxx-kiosk-client:
+    github: suppliesfitness/gymboxx-kiosk-client
+    type: mobile-app         # React Native + styled-components
+    risk: medium
+
+  gymboxx-kiosk-server:
+    github: suppliesfitness/gymboxx-kiosk-server
+    type: server             # NestJS + TypeORM
+    context: docs/domain/gymboxx-kiosk-server/CLAUDE.md
+    risk: medium
+
+  gymboxx-lib:
+    github: suppliesfitness/gymboxx-lib
+    type: lib                # 공통 엔티티/타입/로깅, TypeORM
+    context: docs/domain/gymboxx-lib/CLAUDE.md
+    risk: high               # 전 서버가 공유, 태그 배포로 즉시 전파됨
+
+  gymboxx-pass-app:
+    github: suppliesfitness/gymboxx-pass-app
+    type: mobile-app          # Expo + React Native
+    context: docs/domain/gymboxx-pass-app/CLAUDE.md
+    risk: medium              # 지점 출입 게이트 직접 제어
+
+  gymboxx-pass-server:
+    github: suppliesfitness/gymboxx-pass-server
+    type: server              # NestJS + TypeORM
+    context: docs/domain/gymboxx-pass-server/CLAUDE.md
+    risk: high                 # 출입 판정 + 실제 게이트(eWeLink) 제어 + 얼굴인식/PII
+
+  gymboxx-public-server:
+    github: suppliesfitness/gymboxx-public-server
+    type: server               # NestJS + TypeORM
+    risk: low
+
+  gymboxx-trainer-server:
+    github: suppliesfitness/gymboxx-trainer-server
+    type: server                # NestJS + TypeORM
+    risk: medium
+
+  gymboxx-type-lib:
+    github: suppliesfitness/gymboxx-type-lib
+    type: lib                    # 공용 타입 전용, 런타임 로직 없음
+    risk: medium                  # 광범위하게 import되지만 런타임 동작 없음
+
+  gymboxx-web:
+    github: suppliesfitness/gymboxx-web
+    type: web                     # Next.js
+    risk: low

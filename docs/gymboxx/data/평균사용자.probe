@@ -1,0 +1,178 @@
+# 짐박스 회원 월평균 이용 횟수
+
+> 접속 정보: [docs/ai/gymboxx.db.md](../../ai/gymboxx.db.md) — 운영 `readonlyuser`(읽기 전용).
+> 이 파일은 SELECT 전용이다. 결과 해석은 [월평균-이용횟수.md](월평균-이용횟수.md) 참고.
+>
+> 계산 규칙 (근거: [DB_구조_업그레이드_방안.md:104](../../운동기록/DB_구조_업그레이드_방안.md#L104))
+> - "이용 1회" = **한국시간 일자 기준 중복 제거한 출입일**. 하루 몇 번 찍든 1회.
+> - `created_at`은 UTC 저장 → `CONVERT_TZ(...,'+00:00','+09:00')`로 변환 후 판정.
+> - **`type = 'ACCESS'`(당일 첫 출석)만 계수한다.**
+>   - `REVISIT`(재방문) / `REENTER`(3시간 내 재입장)는 판정 로직상 **그날 이미 `ACCESS`가 찍힌
+>     뒤에만** 발생한다(날이 바뀌면 다시 `ACCESS`). 따라서 일자 중복 제거 기준에서는 방문 수를
+>     늘리지 못한다 — 필터에 넣으나 빼나 결과가 같아 넣지 않는다.
+>   - 실패 3종 `MULTIPLE_ACCESS_LIMIT`(하루 입장 제한 초과) · `EXPIRED`(회원권 만료) ·
+>     `GYM_NOT_MATCHED`(지점 불일치)는 게이트를 통과하지 못한 기록이라 제외.
+> - 기간은 완결된 6개월(KST 2026-02-01 ~ 2026-07-31)로 고정. 진행 중인 달은 평균을 끌어내린다.
+>   UTC 경계값: `2026-01-31 15:00:00` ~ `2026-07-31 15:00:00`.
+> - `access_history.created_at`에 인덱스가 있어 기간 필터가 range scan으로 걸린다. 기간 없는
+>   전체 스캔은 금지(약 1,950만 행 · 운영 DB).
+
+## 0. 스키마·타임존 확인
+
+```sql
+SELECT CONVERT_TZ(NOW(),'+00:00','+09:00') AS kst_now, NOW() AS utc_now;
+SHOW CREATE TABLE access_history;
+```
+
+## 1. type · membership_type 분포 (필터 근거 확인)
+
+```sql
+SELECT type, membership_type, COUNT(*) AS cnt
+FROM access_history
+WHERE created_at >= '2026-06-30 15:00:00' AND created_at < '2026-07-31 15:00:00'
+GROUP BY type, membership_type
+ORDER BY cnt DESC;
+```
+
+## 2. 모수 A — 그 달 1회 이상 방문한 회원 기준
+
+활성 이용자 체감치. "실제 오는 사람은 한 달에 몇 번 오나".
+
+```sql
+SELECT ym,
+       COUNT(*)                  AS active_users,
+       SUM(visits)               AS total_visit_days,
+       ROUND(AVG(visits),2)      AS avg_per_user,
+       ROUND(AVG(visits)/4.33,2) AS weekly_equiv,
+       MAX(visits)               AS max_visits
+FROM (
+  SELECT user_id,
+         DATE_FORMAT(CONVERT_TZ(created_at,'+00:00','+09:00'),'%Y-%m') AS ym,
+         COUNT(DISTINCT DATE(CONVERT_TZ(created_at,'+00:00','+09:00'))) AS visits
+  FROM access_history
+  WHERE type = 'ACCESS'
+    AND user_id IS NOT NULL
+    AND created_at >= '2026-01-31 15:00:00'
+    AND created_at <  '2026-07-31 15:00:00'
+  GROUP BY user_id, ym
+) t
+GROUP BY ym ORDER BY ym;
+```
+
+## 3. 모수 B — 그 달 유효 회원권 보유 회원 기준
+
+회원권 대비 이용률. 미방문 회원이 0으로 분모에 들어간다.
+유효 판정 = `start_at <= 월말 AND expire_at >= 월초`, 상태에서 `REFUNDED`(환불)·`NOT_STARTED`(미개시) 제외.
+`EXPIRED`는 **포함**해야 한다 — 지금 만료됐어도 해당 월에는 유효했던 회원권이다.
+
+```sql
+WITH months AS (
+  SELECT '2026-02' ym, DATE'2026-02-01' d1, DATE'2026-02-28' d2
+  UNION ALL SELECT '2026-03', DATE'2026-03-01', DATE'2026-03-31'
+  UNION ALL SELECT '2026-04', DATE'2026-04-01', DATE'2026-04-30'
+  UNION ALL SELECT '2026-05', DATE'2026-05-01', DATE'2026-05-31'
+  UNION ALL SELECT '2026-06', DATE'2026-06-01', DATE'2026-06-30'
+  UNION ALL SELECT '2026-07', DATE'2026-07-01', DATE'2026-07-31'
+),
+mem AS (
+  SELECT DISTINCT m.ym, mo.user_id
+  FROM months m
+  JOIN membership_order mo
+    ON mo.start_at <= m.d2 AND mo.expire_at >= m.d1
+   AND mo.status NOT IN ('REFUNDED','NOT_STARTED')
+),
+visits AS (
+  SELECT user_id,
+         DATE_FORMAT(CONVERT_TZ(created_at,'+00:00','+09:00'),'%Y-%m') AS ym,
+         COUNT(DISTINCT DATE(CONVERT_TZ(created_at,'+00:00','+09:00'))) AS v
+  FROM access_history
+  WHERE type = 'ACCESS' AND user_id IS NOT NULL
+    AND created_at >= '2026-01-31 15:00:00' AND created_at < '2026-07-31 15:00:00'
+  GROUP BY user_id, ym
+)
+SELECT mem.ym,
+       COUNT(*)                                    AS members_with_pass,
+       SUM(COALESCE(v.v,0))                        AS visit_days,
+       ROUND(SUM(COALESCE(v.v,0))/COUNT(*),2)      AS avg_per_member,
+       ROUND(SUM(COALESCE(v.v,0))/COUNT(*)/4.33,2) AS weekly_equiv,
+       ROUND(100*SUM(v.v IS NOT NULL)/COUNT(*),1)  AS pct_visited_once
+FROM mem
+LEFT JOIN visits v ON v.user_id = mem.user_id AND v.ym = mem.ym
+GROUP BY mem.ym ORDER BY mem.ym;
+```
+
+## 4. 모수 C — 전체 user 행 기준
+
+탈퇴·휴면 포함 전체 회원. 분모가 현재 시점 값으로 고정되므로 과거 월일수록 과소 산출된다.
+
+```sql
+SELECT v.ym,
+       (SELECT COUNT(*) FROM user)                                   AS all_users,
+       v.total_visit_days,
+       ROUND(v.total_visit_days/(SELECT COUNT(*) FROM user),2)       AS avg_per_user,
+       ROUND(v.total_visit_days/(SELECT COUNT(*) FROM user)/4.33,2)  AS weekly_equiv
+FROM (
+  SELECT DATE_FORMAT(CONVERT_TZ(created_at,'+00:00','+09:00'),'%Y-%m') AS ym,
+         COUNT(DISTINCT user_id, DATE(CONVERT_TZ(created_at,'+00:00','+09:00'))) AS total_visit_days
+  FROM access_history
+  WHERE type = 'ACCESS' AND user_id IS NOT NULL
+    AND created_at >= '2026-01-31 15:00:00' AND created_at < '2026-07-31 15:00:00'
+  GROUP BY ym
+) v ORDER BY v.ym;
+```
+
+## 5. 방문 횟수 분포 (평균만 보면 안 되는 이유)
+
+`is_low_visitor_30d`(직전 30일 1~3회 저방문 세그먼트) 정의와 직결된다.
+
+```sql
+SELECT ym,
+       CASE WHEN visits BETWEEN 1 AND 3  THEN '1_1-3회'
+            WHEN visits BETWEEN 4 AND 7  THEN '2_4-7회'
+            WHEN visits BETWEEN 8 AND 12 THEN '3_8-12회'
+            ELSE '4_13회+' END AS bucket,
+       COUNT(*) AS users
+FROM (
+  SELECT user_id,
+         DATE_FORMAT(CONVERT_TZ(created_at,'+00:00','+09:00'),'%Y-%m') AS ym,
+         COUNT(DISTINCT DATE(CONVERT_TZ(created_at,'+00:00','+09:00'))) AS visits
+  FROM access_history
+  WHERE type = 'ACCESS' AND user_id IS NOT NULL
+    AND created_at >= '2026-06-30 15:00:00' AND created_at < '2026-07-31 15:00:00'
+  GROUP BY user_id, ym
+) t
+GROUP BY ym, bucket ORDER BY bucket;
+```
+
+## 6. 회원권 종류별 월평균 (2026-07)
+
+```sql
+SELECT membership_type,
+       COUNT(*)             AS users,
+       ROUND(AVG(visits),2) AS avg_visits
+FROM (
+  SELECT user_id, membership_type,
+         COUNT(DISTINCT DATE(CONVERT_TZ(created_at,'+00:00','+09:00'))) AS visits
+  FROM access_history
+  WHERE type = 'ACCESS' AND user_id IS NOT NULL
+    AND created_at >= '2026-06-30 15:00:00' AND created_at < '2026-07-31 15:00:00'
+  GROUP BY user_id, membership_type
+) t
+GROUP BY membership_type ORDER BY users DESC;
+```
+
+## 7. 검증 — 개별 회원 원시 기록 대조
+
+집계 결과가 손으로 센 일자 수와 맞는지 확인한다. KST 변환·일자 중복 제거·실패 type 제외가
+실제로 먹었는지 보는 지점이다. `user_id`는 확인하려는 회원으로 바꿔 쓴다.
+
+```sql
+SELECT ah.type, ah.gym_id,
+       DATE(CONVERT_TZ(ah.created_at,'+00:00','+09:00')) AS kst_date,
+       CONVERT_TZ(ah.created_at,'+00:00','+09:00')       AS kst_time
+FROM access_history ah
+WHERE ah.user_id = 51758
+  AND ah.created_at >= '2026-06-30 15:00:00'
+  AND ah.created_at <  '2026-07-31 15:00:00'
+ORDER BY ah.created_at;
+```
