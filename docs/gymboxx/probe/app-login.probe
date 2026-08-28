@@ -2,26 +2,44 @@
 - health=1
 ```sh
 curl -X 'GET' \
-  '{{app_api_base}}/app/healthz' \
+  '{{api_base}}/app/healthz' \
   -H 'accept: application/json'
 ```
 
 - 핀 번호 받기
 ```sh
 curl -X 'GET' \
-  '{{app_api_base}}/app/user/pin?phone={{phone}}' \
+  '{{api_base}}/app/user/pin?phone={{phone}}' \
   -H 'accept: application/json'
 ```
 
 - 핀 번호로 토큰 받기
 ```sh
 curl -X 'GET' \
-  '{{app_api_base}}/app/user/pin/validation?pin=7007&phone={{phone}}&unique_device_key=0001' \
+  '{{api_base}}/app/user/pin/validation?pin=9883&phone={{phone}}&unique_device_key=0001' \
   -H 'accept: application/json'
 ```
 
+- 토큰 디코딩 확인
+
 ```sh
 curl -X 'GET' \
-  '{{app_api_base}}/app/test/token-decoding?token={{token}}' \
+  '{{api_base}}/app/test/token-decoding?token={{app_token}}' \
   -H 'accept: application/json'
+```
+
+- 바코드 생성
+```sh
+curl -X 'GET' \
+  '{{api_base}}/app/user/51758/barcode' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer {{app_token}}'
+```
+
+- 사용자
+```sh
+curl -X 'GET' \
+  'https://dev1.supp.fitness/app/user/51758/profile' \
+  -H 'accept: application/json' \
+  -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJneW1fdW5pcXVlX2lkIjoiMDAwMTM0IiwiZGV2aWNlX2lkIjoiOTAwMDAwMDAwMDAwNDk0MCIsImd5bV9pZCI6NDk0LCJneW1fbmFtZSI6Iu2FjOyKpO2KuCDsp4DsoJAiLCJpYXQiOjE3ODc5MjkyMTEsImV4cCI6MTgxOTQ2NTIxMX0.436rIMG07sQSGYEGt-pI5iN3QPpneDfnHhH2pMQFmSE'
 ```

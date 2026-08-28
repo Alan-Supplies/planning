@@ -7,23 +7,28 @@
 
 ## 로그인
 ```sh
-curl -s -w "\nHTTP:%{http_code}\n" -X POST '{{pass_api_base}}/auth/login' \
+curl -s -w "\nHTTP:%{http_code}\n" -X POST '{{api_base}}/pass/auth/login' \
   -H 'Content-Type: application/json' \
   -d '{"gym_unique_id":"{{gym_unique_id}}","device_id":"{{device_id}}"}'
 ```
 > 응답의 `token`을 `.env.probe`의 `pass_token`에 갱신해서 아래 요청에 사용한다 (만료 시에만 재발급하면 됨).
 
+```sh
+
 ## 바코드 출석 - 마케팅 바코드 (dev난곡점 전용, ONE_DAY)
 ```sh
-curl -s -w "\nHTTP:%{http_code}\n" -X POST '{{pass_api_base}}/user/barcode-access' \
+curl -X 'POST' \
+  'https://{{app_base}}/pass/user/barcode-access' \
+  -H 'accept: application/json' \
   -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer {{pass_token}}' \
-  -d '{"barcode":"{{marketing_barcode}}"}'
+  -d '{
+  "barcode": "stringstring"
+}'
 ```
 
 ## 바코드 출석 - VIP 바코드 (전 지점 공통)
 ```sh
-curl -s -w "\nHTTP:%{http_code}\n" -X POST '{{pass_api_base}}/user/barcode-access' \
+curl -s -w "\nHTTP:%{http_code}\n" -X POST '{{api_base}}/user/barcode-access' \
   -H 'Content-Type: application/json' \
   -H 'Authorization: Bearer {{pass_token}}' \
   -d '{"barcode":"{{vip_barcode}}"}'
