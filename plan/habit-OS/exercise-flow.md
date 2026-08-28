@@ -10,6 +10,7 @@
 이 화면은 **4곳**에서 진입하며, 넘겨받는 params가 모드를 결정한다.
 
 | 진입 위치 | 전달 params | 모드 |
+
 |-----------|-------------|------|
 | [BarcodeAndExerciseModal](../src/components/Home/BarcodeAndExerciseModal/index.tsx#L139) (게이트 출입 직후) | `accessHistoryId` | Live (신규) |
 | [ActiveExerciseWidget](../src/components/Home/Exercise/ActiveExerciseWidget.tsx#L31) | `accessHistoryId` | Live (신규) |
