@@ -2,26 +2,26 @@
 - health=1
 ```sh
 curl -X 'GET' \
-  '{{app_api_base}}/app/healthz' \
+  '{{api_base}}/app/healthz' \
   -H 'accept: application/json'
 ```
 
 - 핀 번호 받기
 ```sh
 curl -X 'GET' \
-  '{{app_api_base}}/app/user/pin?phone={{phone}}' \
+  '{{api_base}}/app/user/pin?phone={{phone}}' \
   -H 'accept: application/json'
 ```
 
 - 핀 번호로 토큰 받기
 ```sh
 curl -X 'GET' \
-  '{{app_api_base}}/app/user/pin/validation?pin=7007&phone={{phone}}&unique_device_key=0001' \
+  '{{api_base}}/app/user/pin/validation?pin=2472&phone={{phone}}&unique_device_key=0001' \
   -H 'accept: application/json'
 ```
 
 ```sh
 curl -X 'GET' \
-  '{{app_api_base}}/app/test/token-decoding?token={{token}}' \
+  '{{api_base}}/app/test/token-decoding?token={{token}}' \
   -H 'accept: application/json'
 ```
