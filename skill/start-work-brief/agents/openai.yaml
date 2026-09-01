@@ -1,4 +1,4 @@
 interface:
   display_name: "오늘 업무 시작 브리핑"
   short_description: "오늘의 업무 맥락과 첫 행동을 빠르게 복원합니다"
-  default_prompt: "Use $start-work-brief to catch any likely missing work update with one focused question, then give me a concise interactive briefing for starting today’s work."
+  default_prompt: "Use $start-work-brief to ask what happened to missing recent work and how material stale items should be handled, then give me a concise interactive briefing for starting today’s work."
