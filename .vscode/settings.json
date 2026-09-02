@@ -33,7 +33,7 @@
       "password": "preppers123@"
     }
   ],
-  "probe.mysql.host": "gymboxx-dev.cxubxpnokvfs.ap-northeast-2.rds.amazonaws.com",
-  "probe.mysql.database": "gymboxx",
-  "probe.mysql.user": "readonly_ssl"
+  "probe.mysql.host": "db-ro.gymboxx.prod.supp.kr",
+  "probe.mysql.database": "gymboxx-prod",
+  "probe.mysql.user": "readonlyuser"
 }

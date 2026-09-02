@@ -208,3 +208,8 @@ dev·prod 동일 코드. 테스트 스크립트와 분리해 보안 이슈로 �
 
 바코드 번호는 `Math.floor(1000000000000 + Math.random() * 9000000) + 2000`으로 생성되고 중복
 검사가 없다. 번호 공간이 약 900만이라 충돌 가능성이 있다. (2000 미만은 VIP·마케팅 바코드 예약)
+
+```sql
+select * from user_exercise_set_history
+ limit 1;
+```
