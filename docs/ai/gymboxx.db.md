@@ -1,11 +1,11 @@
 ### GYMBOXX MYSQL
 - 개발 읽기 전용 계정
-  host: gymboxx-dev.cxubxpnokvfs.ap-northeast-2.rds.amazonaws.com
+  host: db.gymboxx.dev.supp.kr
   user: readonly_ssl
   password: probe0929
   database: gymboxx
 - 운영 읽기 전용 계정
-  host: gymboxx-prod.cxubxpnokvfs.ap-northeast-2.rds.amazonaws.com
+  host: db-ro.gymboxx.prod.supp.kr
   user: readonlyuser
   password: supplies12
   database: gymboxx

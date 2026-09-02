@@ -1,0 +1,31 @@
+### (1) 유산소·스트레칭 20종이 근육 부위 라벨을 겸하는지 = "겹침 없이 분할" 주장 검증
+```sql
+SELECT e.id, e.name, GROUP_CONCAT(bp.id ORDER BY bp.id) AS parts
+  FROM exercise e
+  JOIN exercise_body_part ebp ON ebp.exercise_id = e.id AND ebp.status = 'ACTIVE'
+  JOIN body_part bp ON bp.id = ebp.body_part_id
+ WHERE e.id IN (SELECT exercise_id FROM exercise_body_part
+                 WHERE body_part_id IN (7,8) AND status = 'ACTIVE')
+ GROUP BY e.id, e.name;
+```
+
+### (2) 정화안의 진짜 비용 — 이력 테이블에 찍힌 7·8 건수
+```sql
+SELECT 'session' src, body_part_id, COUNT(*) cnt FROM user_exercise_session_body_part GROUP BY body_part_id
+UNION ALL
+SELECT 'machine', body_part_id, COUNT(*) FROM machine_body_part GROUP BY body_part_id
+UNION ALL
+SELECT 'reco_log', body_part_id, COUNT(*) FROM exercise_recommendation_log_body_part GROUP BY body_part_id;
+```
+
+### (3) 세부부위가 정말 근육 6종 아래에만 있는지
+```sql
+SELECT body_part_id, COUNT(*) FROM body_part_detail GROUP BY body_part_id ORDER BY body_part_id;
+```
+### (4) 334행 vs 273종 — 운동당 부위 라벨 개수 분포(실측정리 오차 42행 건과도 연관)
+```sql
+SELECT cnt AS parts_per_exercise, COUNT(*) AS exercises
+  FROM (SELECT exercise_id, COUNT(*) cnt FROM exercise_body_part
+         WHERE status = 'ACTIVE' GROUP BY exercise_id) t
+ GROUP BY cnt ORDER BY cnt;
+```
