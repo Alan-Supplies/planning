@@ -16,7 +16,7 @@ curl -X 'GET' \
 - 핀 번호로 토큰 받기
 ```sh
 curl -X 'GET' \
-  '{{api_base}}/app/user/pin/validation?pin=9883&phone={{phone}}&unique_device_key=0001' \
+  '{{api_base}}/app/user/pin/validation?pin=7555&phone={{phone}}&unique_device_key=0001' \
   -H 'accept: application/json'
 ```
 
