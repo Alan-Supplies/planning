@@ -34,6 +34,6 @@
     }
   ],
   "probe.mysql.host": "db-ro.gymboxx.prod.supp.kr",
-  "probe.mysql.database": "gymboxx-prod",
+  "probe.mysql.database": "gymboxx",
   "probe.mysql.user": "readonlyuser"
 }

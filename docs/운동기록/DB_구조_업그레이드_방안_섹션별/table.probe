@@ -1,0 +1,166 @@
+### exercise
+```sql
+select name, type, unit, has_weight, movement_pattern, status
+  from exercise
+  limit 10;
+select count(*) from exercise;
+```
+```sql
+describe exercise;
+```
+### exercise type
+```sql
+select distinct type from exercise;
+```
+### machine type
+```sql
+select distinct type from machine;
+```
+```sql
+select distinct type_detail from machine;
+```
+
+### exercise type = PROP
+```sql
+select id, name, type, training_type, unit, has_weight, weight_role, movement_pattern
+  from exercise
+  where type = 'PROP';
+select count(*) from exercise
+  where type = 'PROP';
+```
+
+### exercise_function
+EXERCISE_FUNCTIONAL_TAG = [
+   FAT_LOSS, ENDURANCE, MOBILITY, BALANCE, RECOVERY
+]
+```sql
+describe exercise_function;
+```
+```sql
+select * from exercise_function;
+select count(*) from exercise_function;
+```
+
+```sql
+select purpose, count(*) from user_exercise_metadata
+  group by purpose;
+```
+
+### exercise_body_part
+```sql
+select * from exercise_body_part;
+```
+
+### exercise_body_part_detail
+```sql
+select * from exercise_body_part_detail;
+```
+
+### body_part
+```sql
+select * from body_part;
+```
+
+### exercise
+```sql
+select * from exercise;
+```
+
+### 
+```sql
+select * from user_exercise_session
+  limit 1;
+```
+
+### user_exercise_session_history
+```sql
+select * from user_exercise_session_history
+  order by id desc
+  limit 10;
+```
+
+### user_exercise_set_history
+```sql
+select * from user_exercise_set_history set_h
+  order by user_exercise_session_history_id desc
+  limit 10;
+select count(*) from user_exercise_set_history;
+```
+```sql
+describe user_exercise_set_history;
+```
+
+### user_exercise_set_history with unit
+```sql
+select set_h.count, set_h.weight, sh.weight_type
+  from user_exercise_set_history set_h
+  join user_exercise_session_history sh
+    on set_h.user_exercise_session_history_id = sh.id
+  order by sh.id desc
+  limit 10;
+```
+
+### machine
+```sql
+select id, name, type, type_detail, line, body_part, status
+  from machine
+  -- where name like '%dumb%'
+  order by id;
+select count(*) from machine;
+```
+
+### machine group by type, type_detail
+```sql
+select type, type_detail, count(*) from machine
+  group by type, type_detail
+  order by type, type_detail;
+select count(*) from (
+  select type, type_detail from machine
+  group by type, type_detail
+  order by type, type_detail
+) as machine_group;
+```
+
+### user_exercise_session_history with machine
+```sql
+select sh.id, sh.exercise_id, sh.weight_type,
+  m.name as machine_name
+  from user_exercise_session_history sh
+  join machine m
+    on sh.machine_id = m.id
+  order by sh.id desc
+  limit 10;
+```
+
+### USER_EXERCISE_SESSION_HISTORY WITH SET_HISTORY, EXERCISE
+```sql
+select session_h.id, session_h.weight_type
+  , set_h.count, set_h.weight
+  , e.name as exercise_name, e.unit, e.has_weight, e.movement_pattern
+  from user_exercise_session_history session_h
+  join user_exercise_set_history set_h
+    on session_h.id = set_h.user_exercise_session_history_id
+  join exercise e
+    on session_h.exercise_id = e.id
+  order by session_h.id desc
+  limit 10;
+```
+### exercise_recommendation_goal_ratio
+```sql
+select * from exercise_recommendation_goal_ratio;
+```
+
+### exercise-recommendation API 호출로 goal_ratio 반영 확인 (dev)
+  - gym_id=5, selected_body_part_id_list=[1,2] (CHEST, BACK)
+  - 토큰 만료 시 재발급 필요
+```rest
+POST https://api.gymboxx.dev.supp.fitness/app/exercise-recommendation/simple
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJuYW1lIjoi6rmA7ISx7JqxIiwidXNlcl9pZCI6NTE3NTgsImRldmljZV9pZCI6IjAwMDEiLCJpYXQiOjE3ODgxNzM3MTksImV4cCI6MTc4ODE4MDkxOX0.hJ8EE5Lmp9r_XlI8k7XBr5lW0fTQNYKkmlWWw5-KjRQ
+Content-Type: application/json
+
+{
+  "gym_id": 5,
+  "selected_body_part_id_list": [1, 2],
+  "exclude_exercise_id_list": []
+}
+```

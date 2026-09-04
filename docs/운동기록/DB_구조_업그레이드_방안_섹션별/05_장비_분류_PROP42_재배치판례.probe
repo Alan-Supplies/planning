@@ -1,0 +1,721 @@
+# 05-부록. PROP 42종 재배치 판례
+
+> [전체 목차](README.md) · [본문 §05](05_장비_분류.md) · [통합 원문](../DB_구조_업그레이드_방안.md)
+
+§05 "장비 분류를 12종으로 교체"의 재배치 대상 42종을 종목 단위로 배정하고 그 판정 근거를 고정하는 문서.
+본문 주의사항의 "재배치 대상 42종은 판정 근거를 판례로 고정 — 등록자마다 다르게 넣으면 같은 혼재가 재발"에
+대응한다.
+
+## 1. 실측 기준
+
+조회 일시 2026-09-04 15:10 · 운영 DB `gymboxx` (`db-ro` 리드 레플리카, 읽기 전용 계정 —
+[docs/ai/gymboxx.db.md](../../ai/gymboxx.db.md)) · 이 문서의 모든 수치는 §7 조회 쿼리로 재현된다.
+
+종목 수·분포·기구 매핑률은 재조회 시에도 동일하지만, **세션 기록 수는 라이브 데이터라 계속 늘어난다.**
+따라서 §3 의 세션 기록 열은 판정 근거가 아니라 재배치 우선순위 참고용이며, 값이 달라져도 배정은 바뀌지 않는다.
+
+현행 `exercise.type` 6종 분포 — 본문 §05 표와 일치한다.
+
+|type|종목 수|
+|---|---|
+|MACHINE|77|
+|DUMBBELL|55|
+|**PROP**|**42**|
+|BODY|41|
+|BARBELL|31|
+|CABLE|27|
+
+즉 본문의 "소도구 42종"은 `exercise.type = 'PROP'` 인 **운동 종목 42개**를 말한다. 기구 대수가 아니다.
+
+> [DB_구조_업그레이드_테이블컬럼_실측정리.md](DB_구조_업그레이드_테이블컬럼_실측정리.md)의 `BODY 42·BARBELL 32`는
+> 개발 DB 값이다. 운영은 `BODY 41·BARBELL 31` 로 본문 표가 맞다.
+
+## 2. 판정 규칙
+
+12종 값의 판정 질문은 하나다 — **부하가 어디서 오는가.**
+
+한 종목에 장비가 둘 이상 관여할 때는 아래 우선순위로 단일 값을 정한다. 이 순서가 판례의 본체이며,
+개별 종목의 배정은 모두 이 규칙의 적용 결과다.
+
+|순위|규칙|배정|
+|---|---|---|
+|1|외부 중량물이 부하의 주체다|그 중량물 (케틀벨·바벨·덤벨)|
+|2|탄성체가 부하를 만든다|밴드|
+|3|부하는 체중이고 장비는 자세·각도·지지만 제공하는데, **그 장비가 없으면 동작이 성립하지 않는다**|구조물|
+|4|부하는 체중이고 장비는 휴대 소품이며, **없어도 동작 자체는 성립한다**|소도구|
+|—|장비가 관여하지 않는다|맨몸 (`BODY`, 이번 재배치 범위 밖)|
+
+3순위와 4순위를 가르는 기준은 "성립 가능성"이다. 벤치·박스·철봉·캡틴스 체어는 없으면 그 종목을 할 수 없으므로
+구조물이고, 폼롤러·짐볼·스틱·보수 볼은 대체·생략이 가능한 보조 소품이므로 소도구다. 이 기준을 쓰는 이유는
+이 컬럼의 1차 용도가 **지점별 가능 운동 판정**이기 때문이다 — 지점에 무엇이 있어야 이 운동이 가능한지를
+값 하나가 답해야 한다.
+
+3순위가 2순위보다 뒤에 오지 않는다는 점을 특히 고정한다. 밴드가 **부하를 제거**하는 보조용(어시스티드)일 때
+밴드는 부하의 출처가 아니므로 2순위에 해당하지 않고, 설비 필요 여부가 판정을 결정한다. 밴드 사용 사실은
+`weight_role = 'ASSIST'` 로 표현한다.
+
+## 3. 배정 결과
+
+|신설 값|종목 수|세션 기록|비고|
+|---|---|---|---|
+|구조물|15|1,515|기존 인벤토리와 매칭 가능한 유일한 갈래|
+|밴드|10|407|보조용 2종은 구조물로 이동|
+|케틀벨|6|764|`has_weight = 1` · `weight_role = LOAD`|
+|소도구|11|515|재배치 후 남는 진짜 소도구|
+|합계|**42**|**3,201**|PROP 전체 세션 기록 3,201건과 일치 — 누락 없음|
+
+**유산소 기구는 0종이다.** 본문 §05가 PROP 혼재 항목으로 열거한 "유산소 기구"는 PROP에 없고 전부 `MACHINE`
+소속이다 (§5-1 참조).
+
+### 3-1. 구조물 15종
+
+`STRUCTURE` — 철봉·벤치·박스·캡틴스 체어 등 지점 고정 설비가 있어야 성립하는 종목
+
+|id|종목|필요 설비|판정 근거|세션 기록|기구 기입|
+|---|---|---|---|---|---|
+|47|디클라인 크런치|AB 벤치|3순위 · 인벤토리 8종 연결됨|429|80|
+|126|백 익스텐션|로만 체어·백 익스텐션 벤치|3순위 · 인벤토리 18종 연결됨|389|114|
+|178|캡틴스 체어 레그 레이즈|캡틴스 체어·딥 타워|3순위 · 인벤토리 10종 연결됨|339|73|
+|137|벤치 스플릿 스쿼트 / 벤치 런지|벤치|3순위 · 뒷발 지지대 필수|142|0|
+|136|벤치 딥스|벤치|3순위|77|0|
+|174|인클라인 푸시업|벤치·박스|3순위 · 손 지지 높이 필수|39|0|
+|46|디클라인 벤치 리버스 크런치|디클라인 벤치|3순위|34|0|
+|125|박스 원 레그 런지|박스|3순위|33|0|
+|172|인클라인 레그 레이즈|인클라인 벤치|3순위|19|0|
+|164|언더그립 풀업 (중량)|철봉 + 원판·딥벨트|3순위 우선 · 추가 중량은 `weight_role = LOAD` 로 표현|11|0|
+|161|스플릿 점프 투 박스|박스|3순위|3|0|
+|129|밴드 어시스티드 딥스|딥스바 + 밴드(보조)|**2순위 아님** · 밴드는 부하 제거용 · `weight_role = ASSIST`|0|0|
+|130|밴드 어시스티드 친업|철봉 + 밴드(보조)|**2순위 아님** · 위와 동일|0|0|
+|210|크런치 (벤치 위에서)|벤치|3순위 · `INACTIVE`|0|0|
+|212|트라이셉스 프레스 (헤드 벨로우 벤치)|벤치|3순위 · `INACTIVE` · §4-3 참조|0|0|
+
+### 3-2. 밴드 10종
+
+`BAND` — 탄성체가 부하를 만드는 종목 · 10종 전부 `has_weight = 0`
+
+|id|종목|판정 근거|세션 기록|
+|---|---|---|---|
+|133|밴드 페이스 풀|2순위 · PROP 최다 사용 종목|256|
+|132|밴드 체스트 플라이|2순위|36|
+|247|밴드 프론트 레터럴 레이즈|2순위|26|
+|131|밴드 웜업 숄더 스트레칭|2순위 · §4-2 참조|22|
+|249|밴드 시티드 로우|2순위|15|
+|127|밴드 숄더 프레스|2순위|15|
+|134|밴드 프론트 레이즈|2순위|14|
+|128|밴드 암 컬|2순위|13|
+|246|밴드 데드리프트|2순위|5|
+|248|밴드 벤트오버 로우|2순위|5|
+
+### 3-3. 케틀벨 6종
+
+`KETTLEBELL` — 6종 전부 `has_weight = 1` · `weight_role = LOAD` · 1순위 적용, 판정 논쟁 없음
+
+|id|종목|세션 기록|
+|---|---|---|
+|205|케틀벨 데드리프트|253|
+|207|케틀벨 스윙|216|
+|204|케틀벨 고블렛 스쿼트|117|
+|208|케틀벨 업라이트 로우|100|
+|209|케틀벨 프론트 스쿼트|70|
+|206|케틀벨 로우|8|
+
+### 3-4. 소도구 11종
+
+`PROP` — 값 이름은 유지하되 정의가 "프리웨이트 외"에서 "휴대 보조 소품"으로 바뀐다
+
+|id|종목|도구|판정 근거|세션 기록|
+|---|---|---|---|---|
+|139|비복근 폼 롤링|폼롤러|4순위|113|
+|169|외측광근 폼 롤링|폼롤러|4순위|87|
+|162|승모근 폼 롤링|폼롤러|4순위|65|
+|3|대원근 폼 롤링|폼롤러|4순위|62|
+|4|대퇴직근 폼 롤링|폼롤러|4순위|59|
+|226|회전근개 폼 롤링|폼롤러|4순위|52|
+|45|둔근 폼 롤링|폼롤러|4순위 · §4-1 단위 결함|48|
+|159|스틱 굿 모닝|스틱|4순위 · 부하 없음, 자세 학습용|18|
+|160|스틱 힙-힌지|스틱|4순위 · 위와 동일|7|
+|216|푸시업 (보수 볼)|보수 볼|4순위 · 불안정면 보조|4|
+|177|짐볼 스쿼트|짐볼|4순위 · `ACTIVE` 인데 기록 0건|0|
+
+폼 롤링 7종은 `training_type = STRETCHING` · `movement_pattern = STRETCH` 로 이미 일관되어 있어
+장비 값만 바꾸면 된다.
+
+## 4. 함께 정정할 데이터 결함 4건
+
+재배치 UPDATE와 같은 트랜잭션에 넣지 말고, 담당 축(§01·§04)의 정정 작업으로 넘긴다. 여기서는 발견 사실만
+고정한다.
+
+### 4-1. 폼 롤링 단위 불일치 — §04 대상
+
+`둔근 폼 롤링`(id 45)만 `unit = SET`, 나머지 폼 롤링 6종은 `MINUTE`. 같은 동작군인데 측정 방식이 갈린다.
+§04 `has_duration`·`has_reps` 백필 시 `MINUTE` 기준으로 통일한다.
+
+### 4-2. 스트레칭 종목의 성격 값 오류 — §01 대상
+
+`밴드 웜업 숄더 스트레칭`(id 131)은 `movement_pattern = STRETCH` 인데 `training_type = MUSCLE` 이다.
+폼 롤링 7종은 `STRETCHING` 이므로 이 1건만 어긋난다.
+
+### 4-3. 백 익스텐션의 기구 연결에 머신이 섞여 있음 — 종목 분리 검토
+
+`백 익스텐션`(id 126)에 연결된 인벤토리 18종 중 `Low Back 9PR-S3302`·`Lower Back`·`Back-Extension` 2대가
+`PIN`, `Ab/Back Crunch`·`Donkey` 가 `PLATE_LOADED` 다. 즉 구조물 버전과 핀 머신 버전이 한 종목에 묶여 있어,
+재배치 후에도 이 종목만은 지점 판정이 두 갈래로 갈린다. **핀 머신 버전을 별도 종목으로 분리할지 결정이
+필요하다.** 분리하지 않으면 12종 값 하나로 판정한다는 §05의 전제가 이 종목에서 깨진다.
+
+### 4-4. 폐기 검토 대상 4종
+
+`INACTIVE` 상태이고 세션 기록이 0건이다 — `밴드 어시스티드 딥스`(129) · `밴드 어시스티드 친업`(130) ·
+`크런치 (벤치 위에서)`(210) · `트라이셉스 프레스 (헤드 벨로우 벤치)`(212). 특히 212는 `has_weight = 0` 인데
+명칭상 중량 동작으로 읽혀 측정 방식이 불명확하다. 재배치 대상에 포함해 값을 채우되, 폐기 여부는 별도로 묻는다.
+
+## 5. §05 본문 정정 2건
+
+### 5-1. 유산소 기구는 PROP에 없다
+
+본문 §05는 두 곳에서 유산소 기구를 PROP 혼재 항목으로 열거한다.
+
+- "케틀벨·밴드·철봉·**유산소 기구**·소도구가 한 값에 섞여 있어" (무엇이 좋아지는가)
+- "케틀벨·밴드·구조물·**유산소 기구**·소도구로 분해" (어떻게 바꾸는가 2번)
+
+실측 결과 유산소 기구 11종은 전부 `MACHINE` 소속이다 — 래더밀 · 로잉 머신 · 스탭퍼 · 스텝밀 ·
+인클라인 트레드 밀 · 일립티컬 머신 · 입식 사이클 · 좌식 사이클 · 트레드밀 런 · 트레드밀 워크 · 핸드 바이크.
+`MACHINE` 의 `unit = MINUTE` 조합이 정확히 11건이고, PROP의 `MINUTE` 7건은 폼 롤링 6종과
+스플릿 점프 투 박스다.
+
+같은 문장 뒷부분의 "현재 머신 77종 안에 유산소 기구 11종이 섞여 있어(단위가 분)"가 맞는 서술이다.
+따라서 **PROP 해체는 케틀벨·밴드·구조물·소도구 4갈래**이며, 유산소 기구 분리는 `MACHINE` 해체 쪽 작업이다.
+
+### 5-2. 기구 연결률 수치의 기준이 불명확하다
+
+본문은 "실측 기구 연결률이 머신 98.1% · 바벨 0.5% · 덤벨 0%" 라고 적었다. 운영 DB에서 두 가지 기준으로
+측정한 결과는 아래와 같다.
+
+|type|`exercise_machine` 매핑 보유 종목 비율|세션 기록의 `machine_id` 기입률|
+|---|---|---|
+|CABLE|100.0%|81.7%|
+|MACHINE|88.3%|80.8%|
+|BARBELL|16.1%|0.3%|
+|BODY|9.8%|15.7%|
+|PROP|7.1%|8.3%|
+|DUMBBELL|1.8%|0.0%|
+
+바벨 0.3% · 덤벨 0.0% 는 본문 수치와 사실상 일치하지만 머신은 어느 기준으로도 98.1% 가 나오지 않는다
+(머신+케이블 기입 건이 전체 기입의 98.5% 라는 수치와 혼동된 것으로 보인다). **프리필을 머신·케이블에만
+켠다는 결론 자체는 두 기준 모두에서 지지되므로 결론은 유지하고, 근거 수치의 기준만 명기한다.**
+
+## 6. 지점별 가능 운동 판정의 실제 범위
+
+**"이 지점에서 할 수 있는 운동" 을 판정하는 방식이 갈래마다 다르다.** 구조물은 지점 인벤토리를 조인해야
+하고, 케틀벨·밴드·소도구는 전 지점 보유로 간주해 조건 없이 통과시킨다.
+
+인벤토리 실측 — `gym_machine` 6,420대(`ACTIVE` 6,243대 · 본문의 "등록 6,149대"는 조회 시점 차이로 보인다) ·
+`machine` 마스터 1,155종. 마스터 `type` 분포는 `PIN` 538 · `PLATE_LOADED` 337 · `FREE_WEIGHT` 167 ·
+`CARDIO` 58 · `CABLES` 51 · `FREE_WEIGHTS` 4 이며, 마지막 4건은 `FREE_WEIGHT` 의 오타 중복이므로 정정 대상이다.
+
+PROP 42종 중 `exercise_machine` 매핑이 있는 것은 3종(47 디클라인 크런치 · 126 백 익스텐션 ·
+178 캡틴스 체어 레그 레이즈)뿐이고 **셋 다 구조물로 배정되는 종목이다. 소도구 11종은 전건 0개다.**
+
+### 6-1. 구조물 — 판정 경로가 이미 있다
+
+판정 경로는 `exercise` → `exercise_machine` → `machine` → `gym_machine(gym_id)` 하나뿐이다.
+구조물 품목은 `machine` 마스터에 실제로 등록되어 있고 지점별 개체도 있다 (`ACTIVE` 기준, 전체 64지점).
+
+|`machine.type_detail`|등록 대수|보유 지점|
+|---|---|---|
+|`OLYMPIC_BENCH`|171|58|
+|`FUNCTIONAL_CHAIR`|150|52|
+|`PLATFORM_RACK`|193|37|
+|`PLATFORM`|30|23|
+|`RACK`|112|22|
+|`BASIC_BENCH`|8|4|
+
+철봉·딥스도 등록되어 있다 — 파워타워형은 `FUNCTIONAL_CHAIR`(`Chin / Dip / Leg Raise`,
+`Pull-Up / Dip / Leg Raise` 등), 어시스트 머신형은 `PIN`(`Chin Dip Assist` 등)이다.
+
+> `machine.type`·`type_detail` 값의 한글 매칭과 각 값이 실제로 담고 있는 품목은
+> [기구 분류 참조 — `machine.type`·`type_detail`](../기구_분류_type_detail_참조.md) 에 정리했다.
+> 12종 `equipment_type` ↔ `type_detail` 대응표도 그 문서에 있다.
+
+**막혀 있는 것은 인벤토리가 아니라 연결고리다.** 구조물 15종 중 `exercise_machine` 매핑이 있는 것은 3종뿐이다.
+
+|종목|연결 기구 수|
+|---|---|
+|백 익스텐션(126)|18|
+|캡틴스 체어 레그 레이즈(178)|11|
+|디클라인 크런치(47)|8|
+|나머지 12종|**0**|
+
+즉 구조물 갈래의 후속 작업은 **12종의 `exercise_machine` 매핑 신규 작성**이며, 그것만 하면 지점 판정이
+바로 성립한다. 새 테이블은 필요 없다.
+
+### 6-2. 비고정 갈래는 전 지점 보유로 간주한다
+
+**케틀벨·밴드·소도구는 전 지점이 보유하며 수량을 관리하지 않는다(업무 확인, 2026-09-04).**
+따라서 이 세 갈래 27종(케틀벨 6 · 밴드 10 · 소도구 11)은 지점 조건 없이 항상 가능하고,
+**보유 데이터를 만들 필요가 없다.** 새 테이블도, `machine` 마스터 품목 등록도 하지 않는다.
+
+이 결정으로 조사 과정에서 확인했던 아래 사실들은 모두 해소된다 — 기록만 남긴다.
+
+- `machine` 마스터 1,155종에 품목이 없다 — `kettle|band|foam|roll|ball|stick|bosu` 검색 0행. 수량 관리를
+  하지 않으므로 등록할 이유가 없다
+- `gym_machine` 은 `unique_code`·`qr_url`·수리 이력(`gym_machine_report`)을 갖는 **개체 관리** 테이블이고
+  `machine.machine_brand_id` 가 `NOT NULL` 인 브랜드 카탈로그다. 애초에 이 갈래를 담을 자리가 아니다
+- 장비 보유를 담는 테이블은 스키마에 없다 — `equip|tool|prop|item|facility|inventory|asset` 로 테이블명을
+  훑으면 `access_device`·`kiosk_device`·`pass_device` 만 나오고 전부 출입 기기다. 신설하지 않는다
+
+주의 — `feature`/`gym_feature` 는 **지점 기능(편의시설) 축**이다. 샤워시설·회원복·공용락커·와이파이·주차처럼
+앱 지점 소개에 쓰는 값이고 마케팅 문구(`description`)와 이미지를 갖는다. `전문 소도구`(id 81) 항목이
+62/64 지점에 붙어 있으나 이는 소개 항목의 등록 누락일 뿐 장비 보유 실태가 아니다 —
+**판정 근거로 쓰면 신림본점·신림2호점을 잘못 제외한다.** 값 이름도 중복·혼재한다
+(`공용 랙`/`편리한 공용랙` — 후자는 소지품 선반이다).
+
+### 6-3. 갈래별 결론
+
+|갈래|지점 조건|무엇을 보고 판단하는가|후속 작업|
+|---|---|---|---|
+|구조물 15종|**필요**|`gym_machine` → `machine.type_detail`|12종 `exercise_machine` 매핑 작성|
+|케틀벨 6종|불필요|전 지점 보유 간주|없음|
+|밴드 10종|불필요|전 지점 보유 간주|없음|
+|소도구 11종|불필요|전 지점 보유 간주|없음|
+
+**PROP 42종 재배치의 미해결 항목은 없다.** 남는 작업은 구조물 12종의 `exercise_machine` 매핑 작성 한 건이다.
+
+이 결정은 12종 값의 의미를 하나 더 명확하게 만든다 — `equipment_type` 이 **지점 조건이 필요한지 여부를
+그대로 가른다.** 고정 기구 갈래(핀 머신·플레이트 머신·스미스·케이블·유산소 기구·구조물)는 인벤토리
+조인이 필요하고, 비고정 갈래(케틀벨·밴드·소도구)와 맨몸은 조건 없이 통과다. 판정 쿼리는 값 하나를 보고
+두 경로 중 하나를 고르면 된다.
+
+## 7. 쿼리
+
+접속 정보는 [docs/ai/gymboxx.db.md](../../ai/gymboxx.db.md) 의 **운영 읽기 전용 계정**을 쓴다
+(Preppers `kds` 계정이 있는 [docs/ai/db.md](../../ai/db.md) 가 아니다). 아래 수치는 모두 운영 DB 기준이며,
+개발 DB 는 종목 수가 달라 그대로 대조하면 안 된다.
+
+### 7-1. 실측 재현 (조회)
+
+```sql
+-- 현행 6종 분포
+SELECT type, COUNT(*) AS cnt
+  FROM exercise
+ GROUP BY type
+ ORDER BY cnt DESC;
+```
+
+```sql
+-- PROP 42종 전체 — 이 문서 §3 표의 원본
+SELECT id, name, training_type, unit, has_weight, weight_role, movement_pattern, status
+  FROM exercise
+ WHERE type = 'PROP'
+ ORDER BY id;
+```
+
+```sql
+-- PROP 종목별 사용량과 기구 기입 건수 — §3 표의 세션 기록·기구 기입 열
+SELECT e.id, e.name,
+       COUNT(*)                          AS 세션기록,
+       SUM(h.machine_id IS NOT NULL)     AS 기구기입
+  FROM user_exercise_session_history h
+  JOIN exercise e ON e.id = h.exercise_id
+ WHERE e.type = 'PROP'
+ GROUP BY e.id, e.name
+ ORDER BY 세션기록 DESC;
+```
+
+```sql
+-- 유산소 기구가 MACHINE 소속임을 확인 — §5-1 근거
+SELECT type, unit, has_weight, COUNT(*) AS cnt
+  FROM exercise
+ GROUP BY type, unit, has_weight
+ ORDER BY type, unit;
+
+SELECT id, name FROM exercise
+ WHERE type = 'MACHINE' AND unit = 'MINUTE'
+ ORDER BY name;
+```
+
+```sql
+-- 기구 연결률 두 기준 — §5-2 표
+SELECT e.type,
+       COUNT(DISTINCT e.id)                                                   AS 종목수,
+       COUNT(DISTINCT em.exercise_id)                                         AS 매핑보유종목,
+       ROUND(COUNT(DISTINCT em.exercise_id) / COUNT(DISTINCT e.id) * 100, 1)  AS 매핑률
+  FROM exercise e
+  LEFT JOIN exercise_machine em ON em.exercise_id = e.id
+ GROUP BY e.type
+ ORDER BY 매핑률 DESC;
+
+SELECT e.type,
+       COUNT(*)                                                     AS 세션기록,
+       SUM(h.machine_id IS NOT NULL)                                AS 기구기입,
+       ROUND(SUM(h.machine_id IS NOT NULL) / COUNT(*) * 100, 1)      AS 기입률
+  FROM user_exercise_session_history h
+  JOIN exercise e ON e.id = h.exercise_id
+ GROUP BY e.type
+ ORDER BY 기입률 DESC;
+```
+
+```sql
+-- 인벤토리 매칭 가능 범위 — §6 근거
+SELECT COUNT(*) AS gym_machine_total FROM gym_machine;
+SELECT status, COUNT(*) AS cnt FROM gym_machine GROUP BY status;
+SELECT type, type_detail, COUNT(*) AS cnt
+  FROM machine
+ GROUP BY type, type_detail
+ ORDER BY type, cnt DESC;
+
+-- PROP 종목의 기구 연결 내역 (3종만 존재)
+SELECT e.id, e.name, m.name AS machine_name, m.type, m.type_detail
+  FROM exercise e
+  JOIN exercise_machine em ON em.exercise_id = e.id
+  JOIN machine m           ON m.id = em.machine_id
+ WHERE e.type = 'PROP'
+ ORDER BY e.id;
+```
+
+### 7-2. 마이그레이션 — 이미 구현되어 있다
+
+**이 절의 초안(2026-09-04 오전)은 폐기한다.** `gymboxx-lib` 에 실제 마이그레이션이 이미 있고
+그쪽이 정본이다 — `src/sqlv4/V4_31_7__exercise_equipment_type.sql` (원래 `V4_30_3`, 커밋 `b3f89b73`).
+enum 표기·`MACHINE` 판정 규칙 모두 초안과 다르므로 초안 쪽을 버린다.
+
+#### 확정된 enum 12종 (`EXERCISE_EQUIPMENT_TYPE`)
+
+```text
+PIN_MACHINE · PLATE_MACHINE · SMITH · CABLE · CARDIO_MACHINE · BARBELL
+DUMBBELL · KETTLEBELL · BAND · STRUCTURE · BODYWEIGHT · PROP
+```
+
+머신 계열이 `PIN`·`PLATE_LOADED`·`CARDIO` 가 아니라 `_MACHINE` 접미가 붙는다. 인벤토리
+`machine.type_detail` 값과 문자열이 다르므로 조인할 때 그대로 비교하면 안 된다 —
+대응은 [기구 분류 참조](../기구_분류_type_detail_참조.md) 표를 쓴다.
+
+#### 자동 판정 규칙 8문 — `MACHINE` 도 포함된다
+
+초안에는 `MACHINE` 이관 문장이 빠져 있었으나, 실제 SQL 은 `MACHINE` 77종을 세 규칙으로 처리한다.
+
+|#|대상|규칙|
+|---|---|---|
+|1|`DUMBBELL`·`BARBELL`·`CABLE`·`BODY`|단순 매핑 (`BODY` → `BODYWEIGHT`)|
+|2|`MACHINE` ∧ `unit='MINUTE'`|`CARDIO_MACHINE` — 연결 기구 전건 `type='CARDIO'` 교차 검증됨|
+|3|`MACHINE` ∧ 이름에 `스미스`|`SMITH` — 연결 기구 전건 `type_detail='SMITH'` 교차 검증됨|
+|4|`MACHINE` ∧ 연결 기구 80% 다수결|`PIN_MACHINE` / `PLATE_MACHINE`|
+|5|`PROP` ∧ 이름에 `케틀벨`|`KETTLEBELL`|
+|6|`PROP` ∧ 이름에 `밴드`|`BAND`|
+|7|`PROP` ∧ 이름에 `박스`·`벤치`·`캡틴스`|`STRUCTURE`|
+|8|`PROP` ∧ 이름에 `짐볼`·`보수 볼`|`PROP`|
+
+전 문장에 `equipment_type is null` 가드가 있어 순서 의존(2→3→4)이 지켜지고 재실행이 안전하다.
+
+🔴 **`PIN_MACHINE`·`PLATE_MACHINE` 은 다수결로 채운 대표 표기이며 사실이 아니다.** 같은 운동이
+지점에 따라 핀 머신으로도 플레이트 머신으로도 수행된다. **지점별 가능 운동 판정에 이 두 값을 쓰면
+틀린 답이 나온다** — 그 판정은 §6-1 의 `exercise_machine → machine → gym_machine` 경로를 쓴다.
+§6-3 의 "`equipment_type` 이 지점 조건 필요 여부를 가른다" 는 서술은 머신 계열 두 값에는 적용되지 않는다.
+
+#### 운영 실측 — 규칙 8문 재현 결과 (2026-09-04 · `db-ro`)
+
+SQL 의 기대값은 dev(2026-09-01) 기준이다. 운영에 같은 규칙을 적용하면 아래가 된다.
+
+|`equipment_type`|운영|dev 기대값|
+|---|---|---|
+|`DUMBBELL`|55|55|
+|`BODYWEIGHT`|41|42|
+|`BARBELL`|31|32|
+|`CABLE`|27|27|
+|`PIN_MACHINE`|**18**|17|
+|`PLATE_MACHINE`|13|13|
+|`BAND`|12|12|
+|`SMITH`|12|12|
+|`CARDIO_MACHINE`|11|11|
+|`STRUCTURE`|8|8|
+|`KETTLEBELL`|6|6|
+|`PROP`|2|2|
+|**`(NULL)`**|**37**|38|
+|합계|273|273|
+
+자동 부여 236종 · NULL 37종. 재현 쿼리는 §7-4 에 있다.
+
+#### NULL 37종의 구성
+
+|구분|종목 수|id|
+|---|---|---|
+|`MACHINE` 핀/플레이트 혼재 (80% 미달)|14|60 · 63 · 67 · 69 · 70 · 75 · 77 · 84 · 85 · 90 · 91 · 93 · 140 · 239|
+|`MACHINE` 기구 미연결 `ACTIVE`|1|171 인버티드 로우|
+|`MACHINE` 기구 미연결 `INACTIVE`|8|64 · 68 · 72 · 79 · 80 · 82 · 83 · 241|
+|`PROP` 이름 규칙 미적용|14|3 · 4 · 45 · 47 · 126 · 139 · 159 · 160 · 162 · 164 · 169 · 172 · 174 · 226|
+
+미연결 `INACTIVE` 8종은 정상 NULL 이다. 검수 대상은 앞 29종이며 SQL §5 가 예고한 범위와 일치한다.
+dev 기대값이 9종이었던 것은 시점 차이이고, SQL §4-(4)도 "고정 숫자(8 또는 9)로 판정하지 않는다" 고 적었다.
+
+#### 이 판례가 해결하는 부분 — `PROP` 14종
+
+SQL §5 의 사람 판단 대기 중 `PROP` 14종은 §3 배정으로 전건 확정된다.
+
+|신설 값|종목 수|id|
+|---|---|---|
+|`PROP`|9|3 · 4 · 45 · 139 · 162 · 169 · 226 (폼롤링 7) · 159 · 160 (스틱 2)|
+|`STRUCTURE`|5|47 디클라인 크런치 · 126 백 익스텐션 · 164 언더그립 풀업 · 172 인클라인 레그 레이즈 · 174 인클라인 푸시업|
+
+```sql
+-- 검수 반영분 제안 · V4_31_8__exercise_equipment_type_review.sql (실행 금지 · 승인 필요)
+UPDATE exercise SET equipment_type = 'PROP'
+ WHERE id IN (3, 4, 45, 139, 159, 160, 162, 169, 226);
+
+UPDATE exercise SET equipment_type = 'STRUCTURE'
+ WHERE id IN (47, 126, 164, 172, 174);
+```
+
+`MACHINE` 혼재 14종과 미연결 `ACTIVE` 1종(171 인버티드 로우 — `STRUCTURE` 재분류 후보)은 이 판례의
+범위가 아니며 별도 판단이 필요하다.
+
+#### 미해결 충돌 1건 — 밴드 어시스티드 2종
+
+|id|종목|SQL 자동 규칙|이 판례|
+|---|---|---|---|
+|129|밴드 어시스티드 딥스|규칙 6 (이름 `밴드`) → `BAND`|`STRUCTURE` + `weight_role='ASSIST'`|
+|130|밴드 어시스티드 친업|규칙 6 (이름 `밴드`) → `BAND`|`STRUCTURE` + `weight_role='ASSIST'`|
+
+판례 §2 의 우선순위 규칙(밴드가 부하를 제거하는 보조용일 때는 2순위가 아니라 3순위 — 없으면 성립
+불가한 설비가 우선)에 따르면 `STRUCTURE` 다. 자동 규칙은 이름만 보므로 `BAND` 로 채운다.
+둘 다 `INACTIVE`·기록 0건이라 실무 영향은 없으나 **판정 기준이 갈리는 사례이므로 결정이 필요하다.**
+`STRUCTURE` 로 간다면 규칙 6 에 `and name not like '%어시스티드%'` 예외를 넣거나 검수 반영분에서
+덮어쓴다.
+
+### 7-3. 대조 검증
+
+```sql
+-- 미할당 잔여 확인 — 0행이어야 한다
+SELECT id, name, type FROM exercise WHERE equipment_type IS NULL ORDER BY type, id;
+```
+
+```sql
+-- 구 type × 신 equipment_type 대조표 — 병행 기간 동안 주기 실행
+SELECT type, equipment_type, COUNT(*) AS cnt
+  FROM exercise
+ GROUP BY type, equipment_type
+ ORDER BY type, cnt DESC;
+```
+
+```sql
+-- 재배치 건수가 판례와 일치하는지 — STRUCTURE 15 · BAND 10 · KETTLEBELL 6 · PROP 11
+SELECT equipment_type, COUNT(*) AS cnt
+  FROM exercise
+ WHERE type = 'PROP'
+ GROUP BY equipment_type
+ ORDER BY cnt DESC;
+```
+
+```sql
+-- 부하 표현 정합성 — 케틀벨은 전건 LOAD, 밴드는 전건 무게 없음
+SELECT equipment_type, has_weight, weight_role, COUNT(*) AS cnt
+  FROM exercise
+ WHERE equipment_type IN ('KETTLEBELL','BAND','STRUCTURE','PROP')
+ GROUP BY equipment_type, has_weight, weight_role
+ ORDER BY equipment_type;
+```
+
+```sql
+-- 구조물 15종 중 인벤토리 매핑이 없는 종목 — §6 후속 작업 목록
+SELECT e.id, e.name
+  FROM exercise e
+  LEFT JOIN exercise_machine em ON em.exercise_id = e.id
+ WHERE e.equipment_type = 'STRUCTURE'
+   AND em.exercise_id IS NULL
+ ORDER BY e.id;
+```
+
+### 7-4. 자동 규칙 재현 — 컬럼 없이 운영에서 미리 확인
+
+`equipment_type` 은 운영에 아직 없다(2026-09-04 확인). 컬럼을 만들기 전에 규칙 8문의 결과를
+`CASE` 로 재현해 분포와 NULL 목록을 미리 볼 수 있다. §7-2 의 실측 표가 이 쿼리 결과다.
+
+```sql
+-- 규칙 8문 재현 · 분포
+with maj as (
+  select em.exercise_id,
+         sum(m.type = 'PIN')          / count(*) pin_r,
+         sum(m.type = 'PLATE_LOADED') / count(*) plate_r
+    from exercise_machine em
+    join machine m on m.id = em.machine_id
+   group by em.exercise_id
+)
+select case
+         when e.type in ('DUMBBELL','BARBELL','CABLE')                then e.type
+         when e.type = 'BODY'                                          then 'BODYWEIGHT'
+         when e.type = 'MACHINE' and e.unit = 'MINUTE'                 then 'CARDIO_MACHINE'
+         when e.type = 'MACHINE' and e.name like '%스미스%'             then 'SMITH'
+         when e.type = 'MACHINE' and maj.pin_r   >= 0.8                then 'PIN_MACHINE'
+         when e.type = 'MACHINE' and maj.plate_r >= 0.8                then 'PLATE_MACHINE'
+         when e.type = 'PROP' and e.name like '%케틀벨%'                then 'KETTLEBELL'
+         when e.type = 'PROP' and e.name like '%밴드%'                  then 'BAND'
+         when e.type = 'PROP' and (e.name like '%박스%' or e.name like '%벤치%'
+                                   or e.name like '%캡틴스%')           then 'STRUCTURE'
+         when e.type = 'PROP' and (e.name like '%짐볼%'
+                                   or e.name like '%보수 볼%')          then 'PROP'
+         else '(NULL)'
+       end        as equipment_type,
+       count(*)   as cnt
+  from exercise e
+  left join maj on maj.exercise_id = e.id
+ group by 1
+ order by cnt desc;
+```
+
+```sql
+-- NULL 로 남는 종목 전체 목록 · 구분까지 함께
+-- 🔴 ifnull(maj.pin_r, 0) 이 필수다 — 미연결 종목은 maj 가 NULL 이라
+--    not (... or NULL) 이 NULL 로 평가돼 행이 조용히 누락된다(3값 논리)
+with maj as (
+  select em.exercise_id,
+         sum(m.type = 'PIN')          / count(*) pin_r,
+         sum(m.type = 'PLATE_LOADED') / count(*) plate_r,
+         count(*)                               links
+    from exercise_machine em
+    join machine m on m.id = em.machine_id
+   group by em.exercise_id
+)
+select e.id, e.name, e.type, e.status, e.unit,
+       ifnull(maj.links, 0) as 연결기구,
+       case
+         when e.type = 'PROP'                    then 'PROP 이름 규칙 미적용'
+         when ifnull(maj.links, 0) = 0
+              and e.status = 'ACTIVE'            then 'MACHINE 미연결 ACTIVE'
+         when ifnull(maj.links, 0) = 0            then 'MACHINE 미연결 INACTIVE(정상)'
+         else 'MACHINE 핀/플레이트 혼재'
+       end as 구분
+  from exercise e
+  left join maj on maj.exercise_id = e.id
+ where e.type in ('MACHINE','PROP')
+   and not (
+     (e.type = 'MACHINE' and e.unit = 'MINUTE')
+     or (e.type = 'MACHINE' and e.name like '%스미스%')
+     or (e.type = 'MACHINE' and (ifnull(maj.pin_r, 0) >= 0.8 or ifnull(maj.plate_r, 0) >= 0.8))
+     or (e.type = 'PROP' and e.name like '%케틀벨%')
+     or (e.type = 'PROP' and e.name like '%밴드%')
+     or (e.type = 'PROP' and (e.name like '%박스%' or e.name like '%벤치%' or e.name like '%캡틴스%'))
+     or (e.type = 'PROP' and (e.name like '%짐볼%' or e.name like '%보수 볼%'))
+   )
+ order by 구분, e.type, e.id;
+```
+
+## 8. 병행 기간 운영 규칙과 종료 조건
+
+**두 컬럼을 나눠 운영하는 것이 목표가 아니다.** 본문 §05 는 "신규 컬럼을 병행 생성 — 구 컬럼 즉시 삭제
+금지" 와 "병행 기간 동안 두 값 대조 검증 후 구 컬럼 폐기" 를 함께 적었고,
+[17. 테이블·컬럼 명세](17_테이블_컬럼_명세와_ERD_근거.md) 도 `type` 을 제거(후속) 대상으로 분류했다.
+병행은 **검증 수단이며 기한이 있는 상태**다.
+
+영구 이원화하면 §05 가 없애려던 문제가 형태만 바꿔 재발한다 — 두 컬럼이 갈라졌을 때 어느 쪽이 진실인지
+판정할 근거가 없고, 등록자마다 한쪽만 채우면 혼재가 컬럼 단위로 옮겨간다. 그래서 아래 세 규칙을 함께 못 박는다.
+
+|규칙|내용|
+|---|---|
+|진실은 항상 한쪽|전환 전에는 `type`, 전환 후에는 `equipment_type` 만 읽는다. 두 값을 함께 보는 코드를 만들지 않는다|
+|쓰기는 양쪽 동시|운동 마스터 등록·수정은 두 값을 함께 쓴다. 한쪽만 쓰면 대조 검증이 무의미해진다|
+|읽기 전환은 한 번에|참조 지점을 나눠 전환하면 화면과 계산이 서로 다른 값을 보는 구간이 생긴다|
+
+### 8-1. 종료 조건
+
+세 가지가 모두 충족되면 `type` 을 삭제한다.
+
+1. `equipment_type IS NULL` 이 0건 — §7-3 첫 쿼리
+2. 구 값 × 신 값 대조표가 판례와 일치 — §7-3 두 번째·세 번째 쿼리
+3. `type` 을 참조하는 앱·서버 코드가 0곳 — 전수조사 필요
+
+### 8-2. 병행이 길어지는 유일한 원인
+
+자동 규칙 8문을 적용하면 273종 중 236종이 채워지고 **37종이 `NULL` 로 남는다**(§7-2 실측).
+그중 미연결 `INACTIVE` 8종은 정상 NULL 이므로 종료 조건 1을 막는 것은 **29종**이다.
+
+|막는 항목|종목 수|해결 상태|
+|---|---|---|
+|`PROP` 이름 규칙 미적용|14|**이 판례로 해결** (§7-2 검수 반영분)|
+|`MACHINE` 핀/플레이트 혼재|14|**미해결** — 별도 판단 필요|
+|`MACHINE` 미연결 `ACTIVE`|1|**미해결** — 171 인버티드 로우, `STRUCTURE` 재분류 후보|
+
+즉 이 판례를 반영하면 남는 것은 `MACHINE` 15종이고, 그것만 판정하면 종료 조건 1이 성립한다.
+**병행이 길어지는 원인은 `MACHINE` 15종 하나로 좁혀진다.**
+
+혼재 14종은 "같은 운동이 지점에 따라 핀 머신으로도 플레이트 머신으로도 수행된다" 는 실태 때문에
+남은 것이므로, 값을 억지로 하나 고르기보다 **대표 표기를 부여할지 아니면 `NULL` 을 정상으로 인정할지**를
+먼저 정해야 한다. 후자를 택하면 종료 조건 1을 "검수 대상 0건" 으로 바꿔 서술해야 한다.
+
+겹치는 154종(§7-2 규칙 1)은 이 위험의 대상이 아니다 — 기계적 이관이므로 갈라질 여지가 없다.
+
+### 8-3. `MACHINE` 이 `NULL` 인 진짜 원인 — 분류축 오류 의심
+
+"`MACHINE` 15종은 NULL 로 남는다" 는 서술은 **원인을 잘못 짚은 것일 수 있다.** 운영 실측:
+
+|판정|양쪽(핀·플레이트) 연결|한쪽만 연결|합계|
+|---|---|---|---|
+|자동 부여됨 (80% 이상)|**17**|14|31|
+|혼재로 NULL (80% 미달)|**14**|0|14|
+|합계|31|14|45|
+
+`MACHINE` 중 핀·플레이트 대상 45종에서 **31종(69%)이 핀 머신과 플레이트 머신 양쪽에 연결되어 있다.**
+그리고 **자동 부여된 31종 안에도 양쪽 연결이 17종 들어 있다.** 즉 NULL 14종과 값이 들어간 17종은
+성질이 같은데 80% 임계선 하나로 갈렸을 뿐이다.
+
+그렇다면 원인은 데이터 부족이 아니다 — **핀/플레이트는 종목의 속성이 아니라 기구의 속성**인데
+종목 컬럼에 넣으려 해서 생긴 문제다. 14종이 판정 불가인 게 아니라, 14종이 그 분류축의 반례다.
+같은 이유로 `PIN_MACHINE`·`PLATE_MACHINE` 값은 자동 부여분 17종에서도 사실이 아니며,
+SQL 이 "대표 표기이지 사실이 아니다" 라고 경고한 범위가 실제로는 NULL 14종보다 넓다.
+
+#### 이 축이 필요한 이유가 있는지
+
+- **앱 필터 칩** — 요구는 "5칩에서 6칩(유산소 기구·도구 신설)"(§05 본문)이고 **핀/플레이트 구분은 없다.**
+  칩에는 머신이 하나로 들어간다
+- **지점별 가능 운동 판정** — SQL 스스로 이 값을 쓰지 말라고 못 박았다.
+  `exercise_machine → machine → gym_machine` 경로를 쓴다
+- **계산·집계** — "머신 근력 운동" 을 뽑는 조건은 유산소 기구를 분리하면 충족된다(§05).
+  핀/플레이트를 더 나눌 이유가 여기에 없다
+
+즉 종목 단위로 핀/플레이트를 구분해야 하는 확인된 요구가 없다.
+
+#### 선택지
+
+|안|내용|NULL|비용|
+|---|---|---|---|
+|A|`PIN_MACHINE`·`PLATE_MACHINE` 을 `MACHINE` 하나로 합쳐 **11종**으로 · 핀/플레이트는 `machine.type_detail` 에서 읽는다|**0건** → `NOT NULL` 전환 가능|enum 값 2개 삭제·백필 1문|
+|B|현행 유지 — 대표 표기 + NULL 인정|15건 상시|병행 종료 조건을 "검수 대상 0건" 으로 재정의해야 함|
+|C|혼재 종목을 핀/플레이트 두 종목으로 분리|0건|31종 분리 + 기존 세션 기록 재매핑 — 비용 큼|
+
+**A안을 권한다.** `MACHINE` 은 `PROP` 같은 부정 정의("~외")가 아니라 긍정 정의(부하를 기구가 제공하며
+궤도가 고정됨)이므로, §05 가 없애려던 잔여 버킷 문제가 재발하지 않는다. 그리고 A안을 택하면
+`NULL` 이 `PROP` 검수분(§7-2) 반영 후 **미연결 `INACTIVE` 8종만 남아** 종료 조건 1이 곧바로 성립한다.
+
+```sql
+-- A안 채택 시 · 실행 금지 · 승인 필요
+-- 1) enum 에서 두 값을 MACHINE 으로 대체 (11종)
+-- 2) 기존 부여분 이관
+UPDATE exercise SET equipment_type = 'MACHINE'
+ WHERE equipment_type IN ('PIN_MACHINE', 'PLATE_MACHINE');
+-- 3) 미판정 15종 채우기 (혼재 14 + 미연결 ACTIVE 1 중 머신 유지분)
+UPDATE exercise SET equipment_type = 'MACHINE'
+ WHERE type = 'MACHINE' AND equipment_type IS NULL AND status = 'ACTIVE';
+```
+
+171 인버티드 로우는 `MACHINE` 이 아니라 `STRUCTURE` 재분류 후보이므로 3)에서 제외하고 개별 판단한다.
+
+## 9. 확정·미확정 정리
+
+|항목|상태|
+|---|---|
+|판정 규칙 4단계 우선순위|이 문서로 제안 — **승인 필요**|
+|42종 배정 (구조물 15·밴드 10·케틀벨 6·소도구 11)|이 문서로 제안 — **승인 필요**|
+|12종 값 이름(한글)|확정 (2026-08-21)|
+|12종 enum 영문 표기|**확정** — `EXERCISE_EQUIPMENT_TYPE` 12값 (`gymboxx-lib` 구현체가 정본 · §7-2)|
+|`PROP` 14종 검수 반영분|이 판례로 확정 — SQL 작성 **승인 필요** (§7-2)|
+|밴드 어시스티드 2종 (129·130)|**결정 필요** — 자동 규칙 `BAND` vs 판례 `STRUCTURE` (§7-2)|
+|`MACHINE` 혼재 14종 + 미연결 ACTIVE 1종|**미해결** — 핀/플레이트를 종목 축에서 뺄지(A안) 결정 선행 (§8-3)|
+|`PIN_MACHINE`·`PLATE_MACHINE` 값 유지 여부|**결정 필요** — 45종 중 31종이 양쪽 연결 · 분류축 반례 (§8-3)|
+|유산소 기구 = MACHINE 소속|실측 확정|
+|백 익스텐션 핀 머신 버전 종목 분리|**결정 필요** (§4-3)|
+|`INACTIVE` 4종 폐기 여부|**결정 필요** (§4-4)|
+|케틀벨·밴드·소도구의 지점 조건|**불필요** — 전 지점 보유 간주·수량 미관리 (업무 확인 2026-09-04)|
+|구조물 12종의 `exercise_machine` 매핑|**작업 필요** (§6-1)|
+|병행 기간 운영 규칙 3개와 종료 조건|이 문서로 제안 — **승인 필요** (§8)|
+|`MACHINE` 77종|자동 규칙으로 62종 판정됨 — 남은 15종이 병행 종료의 유일한 선행 조건 (§8-2)|
+
+---
+
+[이전](04_측정_방식.md) · [목차](README.md) · [본문 §05](05_장비_분류.md) · [다음](06_부위_기여도.md)

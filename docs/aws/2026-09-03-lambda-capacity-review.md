@@ -481,14 +481,24 @@ DLQ 도입과 duration 개선(18.9초 → 8.9초)은 7월 조사의 권고가 �
 
 ### 3. `crm-batch-prod-updateInRealtime`
 
-메모리 조정보다 아래를 먼저 본다.
+에러 12,803건의 원인은 **부록 A** 에서 로그로 규명했다. 요약하면 호출 실패의
+99.7%(12,728건)가 **빈 `events` 배열을 Braze 에 보내 400 을 받는 단일 버그**다.
 
-- 에러 12,803건 / 138,606건 = 9.2% 의 원인 분류 (7월 조사에서는 payload
-  validation 실패와 Braze 400 이 주 원인이었다. 동일 원인인지 확인)
+우선 조치 (상세는 부록 A.7):
+
+- 빈 payload 일 때 Braze 호출을 생략하고, Braze 호출을 `try/catch` 로 감싼다
+  → 호출 실패 99.7% 제거
+- 이벤트 소스 매핑에 `FunctionResponseTypes: ["ReportBatchItemFailures"]` 를
+  적용한다 (현재 `[]`) → 재처리 6.5% 제거
+- 생산자 3곳에 payload 가드를 추가한다 (`userId` / `appInstanceId` 누락
+  1,190건이 조용히 유실되고 있다)
+
+duration 관련:
+
 - 건당 평균 8.9초의 잔여 원인. 7월에 지적된 `app_instance` 인덱스가 실제로
   적용되었는지, 다른 쿼리가 남아 있는지 확인
-- 위 두 개가 해소되면 동시성 포화와 SQS 3시간 지연, 그리고 전체 비용의 79%가
-  같이 내려간다
+- 큐 유입의 80.8%가 `SAVE_APP_INSTANCE` 다. 발행 빈도 완화가 곧 RDS 부하
+  완화다 (부록 A.7-G)
 
 메모리 축소(1024 → 768MB, 월 $51 절감)는 duration 개선 이후에 검토한다. CPU 가
 줄면 duration 이 늘어 동시성 포화를 악화시킬 수 있다.
@@ -590,8 +600,416 @@ GB-초 = Duration_Sum(ms) / 1000 * (MemorySize(MB) / 1024)
 
 ## 남은 확인 항목
 
-- `crm-batch-prod-updateInRealtime` 에러 12,803건의 실제 메시지 분류
+- ~~`crm-batch-prod-updateInRealtime` 에러 12,803건의 실제 메시지 분류~~
+  → 부록 A 에서 완료
 - `gymboxx_crm.app_instance` 인덱스 적용 여부 (7월 권고 항목)
 - `app-web-socket-prod-messageToOne` 900초 hang 의 원인
 - `preppers-admin-serverless` 118개 중 3일 무호출 80개의 실사용 여부
 - 로그 그룹은 있으나 함수가 없는 고아 로그 그룹 (341 - 319 + 5 = 27개 추정)
+
+---
+
+# 부록 A. `crm-batch-prod-updateInRealtime` 에러 12,803건 상세 분석
+
+- 분석 일시: 2026-09-03 19:10~19:45 KST
+- 대상 로그 그룹: `/aws/lambda/crm-batch-prod-updateInRealtime`
+- 분석 구간: 동일 (최근 3일)
+- Insights 스캔량: 쿼리당 약 1.05 GB
+
+## A.1 결론
+
+**호출 실패의 100% 가 Braze API 에러이고, 그중 99.7% 는 "빈 events 배열을
+Braze 에 보내서 400 을 받는" 단일 버그다.**
+
+| 항목 | 건수 | 비중 |
+|---|---|---|
+| Errors 메트릭 (호출 단위) | 12,803 | - |
+| `Invoke Error` 로그 | 12,770 | - |
+| ├ Braze 400 `No data parsed` (빈 events) | 12,728 | **99.7%** |
+| ├ Braze 503 | 39 | 0.3% |
+| ├ Braze 500 | 2 | - |
+| └ Braze 504 | 1 | - |
+
+Validation 실패, `not found` 계열은 **호출을 실패시키지 않는다**(로그만 남고
+삼켜짐). 위 표의 12,770 이 `Invoke Error` 전량이므로 회계가 정확히 맞는다.
+
+## A.2 근본 원인 체인
+
+실패 호출 `e5f9e992-90fa-5712-978f-8a80cccc801c` 의 전체 로그로 재현한 흐름.
+
+```text
+17:16:56.918  START (배치 2건)
+17:16:56.920  INFO  Incoming event body: { "type": "MEMBERSHIP_EXPIRE",
+                      "payload": { "events": [ { "userId": 429886, ... } ] } }
+17:16:56.920  INFO  Incoming event body: { "type": "SAVE_APP_INSTANCE",
+                      "payload": { "userId": 384813, "appInstanceId": "E066...", "deviceOS": "ios" } }
+17:16:56.991  WARN  User 429886 not found in app instance
+17:16:57.243  ERROR {"tag":"[API ERROR] brazeUserTrackAPI",
+                      "url":"https://rest.iad-07.braze.com/users/track",
+                      "method":"POST","status":400,
+                      "requestBody":"{\"events\":[]}",
+                      "responseData":{"message":"No data parsed"}}
+17:16:57.244  ERROR Invoke Error {"message":"Request failed with status code 400","name":"AxiosError", ...}
+17:16:57.246  END / REPORT  Duration: 327.76 ms  Max Memory Used: 425 MB
+```
+
+단계별로 풀면 이렇다.
+
+1. 배치에 `MEMBERSHIP_EXPIRE` 이벤트가 들어온다.
+2. 해당 `userId` 의 `app_instance` 행이 없어 Braze 이벤트 생성에서 제외된다
+   → `WARN User <N> not found in app instance` (3일간 **12,837건**).
+3. 그 배치에서 Braze `events` 배열에 담길 항목이 전부 걸러진다.
+   `SAVE_APP_INSTANCE` 는 `events` 를 만들지 않으므로(속성/DB 갱신 경로),
+   `MEMBERSHIP_EXPIRE` 만 제외되면 배열이 비게 된다.
+4. **배열이 비었는데도 그대로 Braze `/users/track` 를 호출한다**
+   → Braze 400 `{"message":"No data parsed"}`.
+5. AxiosError 를 잡지 않아 핸들러 전체가 throw → invocation 실패.
+6. 이벤트 소스 매핑에 `FunctionResponseTypes: []` (부분 배치 응답 미사용)이므로
+   **배치 전체(최대 10건)가 재전송된다.** 정상 메시지까지 함께 재처리된다.
+
+실패 호출 샘플 8건 전수에 `MEMBERSHIP_EXPIRE` 가 포함되어 있었고, 동시에 정상
+`SAVE_APP_INSTANCE` 도 섞여 있었다.
+
+| requestId (앞 8자) | 배치 구성 |
+|---|---|
+| `e5f9e992` | SAVE_APP_INSTANCE 1 + MEMBERSHIP_EXPIRE 1 |
+| `11e1b0fc` | SAVE_APP_INSTANCE 7 + MEMBERSHIP_EXPIRE 2 + UPDATE_AGREEMENT 1 |
+| `e9e5189d` | SAVE_APP_INSTANCE 5 + MEMBERSHIP_EXPIRE 5 |
+| `b9976b1b` | MEMBERSHIP_EXPIRE 8 + SAVE_APP_INSTANCE 2 |
+| `e2cb4c35` | MEMBERSHIP_EXPIRE 6 + SAVE_APP_INSTANCE 4 |
+| `a7c5d3a6` | MEMBERSHIP_EXPIRE 8 + SAVE_APP_INSTANCE 2 |
+| `3b149e71` | SAVE_APP_INSTANCE 8 + MEMBERSHIP_EXPIRE 2 |
+| `e39904e2` | SAVE_APP_INSTANCE 8 + MEMBERSHIP_EXPIRE 2 |
+
+### DLQ 가 비어 있는 이유
+
+실패가 12,728건인데 DLQ 는 46건뿐이다. 부분 배치 응답이 꺼져 있으므로 배치가
+재전송되는데, 재전송 시 배치 구성이 달라져 유효한 이벤트가 섞이면 `events` 가
+비지 않고 200 을 받는다. 그러면 **문제가 된 `MEMBERSHIP_EXPIRE` 메시지도 함께
+삭제된다.** 즉 실패는 자연 소멸하지만, 그 대가로 정상 메시지들이 반복 처리된다.
+
+## A.3 재처리 낭비 정량
+
+| 항목 | 3일 값 |
+|---|---|
+| SQS `NumberOfMessagesSent` | 776,357 |
+| `Incoming event body` 로그 (실제 처리 횟수) | **827,007** |
+| 초과 처리 | **50,650건 (6.5%)** |
+| Invocations (REPORT) | 138,568 |
+| 실패 Invocations | 12,770 (9.2%) |
+| 평균 배치 크기 | 5.97건/호출 |
+
+전체 처리량의 6.5% 가 재시도로 인한 중복 작업이다. 이 함수가 Lambda 전체
+컴퓨트 비용의 79% 를 쓰고 있으므로, 재시도 제거만으로도 월 약 $13 이 줄고
+동시성 10 슬롯의 6.5% 가 회수된다.
+
+## A.4 이벤트 타입별 유입 (3일)
+
+| 타입 | 건수 | 비중 |
+|---|---|---|
+| `SAVE_APP_INSTANCE` | 668,352 | **80.8%** |
+| `BARCODE_CHECK` | 94,644 | 11.4% |
+| `PURCHASE` | 19,907 | 2.4% |
+| `EXERCISE_TAG_ADDED` | 18,532 | 2.2% |
+| `MEMBERSHIP_EXPIRE` | 15,881 | 1.9% |
+| `UPDATE_AGREEMENT` | 6,046 | 0.7% |
+| `USER_SIGNUP` | 2,172 | 0.3% |
+| `PT_SESSION_COMPLETE` | 1,387 | 0.2% |
+| `DELETE_USER` | 78 | - |
+
+`SAVE_APP_INSTANCE` 가 전체 유입의 80.8% 다. 3일 668,352건 = 초당 약 2.6건이며,
+2026-07-27 조사에서 RDS 부하 1위였던 `app_instance.last_used_at` UPDATE 의
+유입원이 바로 이것이다. **이 이벤트는 조회 API 를 탈 때마다 발행된다**
+(`gymboxx-app-server/src/modules/user/user.controller.ts:756` 등).
+
+## A.5 로그 레벨 및 ERROR 분해
+
+3일 총 로그 라인 1,568,813.
+
+| 레벨 | 라인 수 |
+|---|---|
+| INFO | 1,105,809 |
+| (레벨 없음: START/END/REPORT/INIT 등) | 416,204 |
+| ERROR | 32,535 |
+| WARN | 14,204 |
+
+### ERROR 32,535건 분해
+
+| 메시지 | 건수 | 호출 실패 | 성격 |
+|---|---|---|---|
+| `[API ERROR] brazeUserTrackAPI` 등 | 12,780 | **예** | Braze 호출 실패 |
+| `Invoke Error` (AxiosError 재던짐) | 12,770 | **예** | 위와 동일 사건 |
+| `AccessHistory(<N>) not found` | 2,908 | 아니오 | 조회 실패, 삼킴 |
+| `Ignoring invalid configuration option ... idleTimeout` | 1,380 | 아니오 | mysql2 경고가 ERROR 로 |
+| `Validation failed { ... }` | 1,193 | 아니오 | 페이로드 결함 |
+| `Invalid message { ... }` | 1,193 | 아니오 | 위와 쌍으로 출력 |
+| `MembershipOrder(<N>) not found` | 159 | 아니오 | |
+| `User(<N>) not found` | 149 | 아니오 | |
+| `CurrentMembershipOrder(<N>) not found` | 3 | 아니오 | |
+| `PaymentHistory(...) not found` | 3 | 아니오 | |
+
+### WARN 14,204건 분해
+
+| 메시지 | 건수 |
+|---|---|
+| `User <N> not found in app instance` | **12,837** |
+| `User <N> not found` | 1,197 |
+| `Current membership order not found for user <N>` | 153 |
+| `[PaymentHistory(food_order_id=<N>)] not found (attempt <N>). retry after <N> (replication lag suspected)` | 9 |
+| `PtOrder <N> not found` | 3 |
+| `PaymentHistory not found for food_order_id: <N>` | 3 |
+| `User <N> not found in gymboxx` | 2 |
+| `[<*>] chunk <N> status undefined, retry <N> after <N>` | 1 |
+
+## A.6 부수 발견 — 조용히 유실되는 메시지
+
+### (1) `BARCODE_CHECK` 에 `userId` 누락 709건
+
+`Validation failed` 의 대상 property 분포.
+
+| property | 건수 | 제약 |
+|---|---|---|
+| `userId` | 709 | `isNumber: userId must be a number conforming to the specified constraints` |
+| `appInstanceId` | 481 | `isNotEmpty: appInstanceId should not be empty`, `isString: appInstanceId must be a string` |
+
+`Invalid message` 원문 유형과 일치한다.
+
+| 원문 | 건수 | 해당 이벤트 |
+|---|---|---|
+| `Invalid message { accessType: 'ACCESS', barcodeType: <*> }` | 709 | `BARCODE_CHECK` (userId 없음) |
+| `Invalid message { userId: <*> }` | 481 | `SAVE_APP_INSTANCE` (appInstanceId 없음) |
+| `Invalid message { userId: <*>, deviceOS: 'android' }` | 3 | `SAVE_APP_INSTANCE` (위의 부분집합) |
+
+원인 코드 — `gymboxx-pass-server/src/modules/user/user.controller.ts:47-53`:
+
+```ts
+let accessCountWithinMonth: number
+if (user_id) {
+  accessCountWithinMonth = await this.userService.getUserAccessCountWithinMonth(user_id)
+}
+await this.crmBatchService.sendMessageBarcodeCheckEvent(
+  user_id, access_type, accessCountWithinMonth, barcode.type, order,
+)
+```
+
+`if (user_id)` 가드가 **조회에만** 걸려 있고 SQS 발송은 무조건 실행된다.
+`user_id` 가 falsy 면 `userId: undefined` 인 메시지가 발행되고,
+`JSON.stringify` 가 undefined 키를 지우므로 소비자에서 `userId` 없는 페이로드로
+도착한다. 이 메시지는 재시도 없이 버려진다(호출 실패가 아니므로 SQS 도 삭제).
+
+### (2) `SAVE_APP_INSTANCE` 에 `appInstanceId` 누락 481건
+
+원인 코드 — `gymboxx-app-server/src/modules/user/user.controller.ts:754-761`:
+
+```ts
+const appInstanceId = request.headers?.app_instance_id
+const deviceOS = request.headers?.device_os
+await this.crmBatchService.sendMessageToSaveAppInstance(
+  userId, appInstanceId, deviceOS, '/:userId/membership', 'GET',
+)
+```
+
+헤더가 없으면 `undefined` 를 그대로 발송한다. 같은 레포의
+`sendMessageToExerciseTagAdded`(`src/modules/crm-batch/crm-batch.service.ts:216-222`)
+에는 이미 가드가 있다.
+
+```ts
+if (!appInstanceId) {
+  this.logger.error(
+    `CRM 운동 태그 메시지 발송 생략 — appInstanceId 없음 (user_id=${userId}, access_history_id=${accessHistoryId})`,
+  )
+  return
+}
+```
+
+즉 **해결 패턴이 같은 파일에 이미 있고, `SAVE_APP_INSTANCE` 경로에만 적용되지
+않았다.**
+
+### (3) `AccessHistory(<N>) not found` 2,908건 — 복제 지연 의심
+
+`EXERCISE_TAG_ADDED` 페이로드는 `accessHistoryId` 를 담아 보내고 소비자가
+이를 조회한다.
+
+```json
+{ "type": "EXERCISE_TAG_ADDED",
+  "payload": { "userId": 298863, "deviceOS": "android",
+               "appInstanceId": "cf47686dda45709c9252d9ebf632ad36",
+               "accessHistoryId": 19774925, "routines": ["어깨"] } }
+```
+
+`EXERCISE_TAG_ADDED` 유입 18,532건 중 2,908건(**15.7%**)이 조회 실패다. ID 가
+연속적인 큰 값(19,769,xxx)이므로 존재하지 않는 행이 아니라 **읽기 복제 지연**
+쪽이 유력하다.
+
+같은 소비자 코드에는 `PaymentHistory` 에 대해서만 백오프 재시도가 있다.
+
+```text
+[PaymentHistory(food_order_id=<N>)] not found (attempt <N>).
+  retry after <N> (replication lag suspected)
+```
+
+`AccessHistory` 에는 이 재시도가 없다. 동일 패턴을 적용하면 된다.
+
+### (4) mysql2 잘못된 옵션 1,380건
+
+```text
+Ignoring invalid configuration option passed to Connection: idleTimeout.
+This is currently a warning, but in future versions of <*>, an error will be
+thrown if you pass an invalid configuration option to a Connection
+```
+
+`idleTimeout` 은 mysql2 `Connection` 이 인식하지 않는 옵션이다. 실제 효과가
+없으면서 ERROR 레벨로 1,380건의 노이즈를 만든다.
+
+> 이 레포 `CLAUDE.md` 의 "DB 커넥션 풀" 항목과 같은 유형의 문제다 —
+> `app.module.ts` TypeORM `extra` 옵션을 mysql2 기준으로 확인해야 한다.
+
+## A.7 조치 제안
+
+우선순위 순.
+
+### A. 빈 payload 일 때 Braze 호출 생략 (소비자)
+
+가장 작은 변경으로 호출 실패 12,728건(99.7%)이 사라진다.
+
+```ts
+if (events.length === 0) return   // 또는 purchases/attributes 각각
+await brazeUserTrackAPI({ events })
+```
+
+동시에 Braze 호출을 `try/catch` 로 감싸 배치 전체를 죽이지 않도록 한다.
+5xx(503/500/504 총 42건)는 재시도 가치가 있으므로 4xx 와 구분해 처리한다.
+
+### B. 부분 배치 응답 활성화 (인프라)
+
+```text
+FunctionResponseTypes: ["ReportBatchItemFailures"]
+```
+
+현재 `[]` 이다. 활성화하면 실패한 메시지만 재전송되어 재처리 6.5% 가 사라진다.
+핸들러가 `batchItemFailures` 를 반환하도록 함께 수정해야 한다. 2026-07-27
+조사에서도 권고된 항목이며 아직 미적용이다.
+
+### C. 생산자 가드 추가
+
+- `gymboxx-pass-server/src/modules/user/user.controller.ts:53` —
+  `user_id` 없으면 `sendMessageBarcodeCheckEvent` 를 호출하지 않는다.
+- `gymboxx-app-server/src/modules/user/user.controller.ts:756` —
+  `app_instance_id` 헤더 없으면 발송을 생략한다.
+  `sendMessageToExerciseTagAdded` 의 가드를 그대로 옮기면 된다.
+
+발송 지점이 여러 곳이므로 `CrmBatchService` 안에서 한 번에 막는 편이 안전하다.
+
+### D. `MEMBERSHIP_EXPIRE` 발행 축소 (생산자)
+
+`gymboxx-user-app-batch/handlers/membership-handler/crm-batch.service.ts` 의
+`handleMembershipExpireEvent` 는 `app_instance` 유무와 무관하게 전 건을
+발행한다. 만료 회원은 앱을 지운 경우가 많아 대부분 소비자에서 걸러진다
+(WARN 12,837건). 생산 측에서 `app_instance` 존재 여부로 먼저 필터링하면
+큐 유입과 소비자 부하가 함께 줄어든다.
+
+단, A 를 먼저 적용하면 실패는 이미 사라지므로 D 는 최적화 성격이다.
+
+### E. `AccessHistory` 조회에 복제 지연 재시도 적용
+
+`PaymentHistory` 에 이미 있는 백오프 재시도를 `AccessHistory` 조회에도 적용해
+2,908건(EXERCISE_TAG_ADDED 의 15.7%)의 유실을 줄인다.
+
+### F. mysql2 `idleTimeout` 옵션 제거
+
+인식되지 않는 옵션이므로 제거하거나 mysql2 가 지원하는 이름으로 바꾼다.
+
+### G. `SAVE_APP_INSTANCE` 발행 빈도 재검토
+
+큐 유입의 80.8%(3일 668,352건)를 차지한다. 조회 API 마다 발행하는 대신
+- 동일 `(userId, appInstanceId)` 에 대한 짧은 TTL 중복 제거, 또는
+- `last_used_at` 갱신 주기를 분 단위로 완화
+
+를 검토한다. 이 유입이 곧 2026-07-27 조사의 RDS 부하 1위 쿼리다.
+
+## A.8 재현 쿼리
+
+### 로그 레벨 분포
+
+```text
+parse @message /^\S+\s+\S+\s+(?<lvl>[A-Z]+)\s/
+| stats count() as cnt by lvl
+| sort cnt desc
+```
+
+### ERROR 라인 패턴 클러스터링
+
+```text
+parse @message /^\S+\s+\S+\s+(?<lvl>[A-Z]+)\s+(?<body>[\s\S]*)$/
+| filter lvl = "ERROR"
+| pattern body
+```
+
+`pattern` 결과는 `@pattern`, `@sampleCount` 필드를 뽑아야 읽을 수 있다.
+
+```bash
+jq -r '.results[] | map({(.field):.value}) | add
+       | "\(.["@sampleCount"])\t\(.["@pattern"])"' res.json | sort -rn
+```
+
+`@sampleCount` 는 표본 추정치이므로 정확한 수치는 개별 `stats count()` 로
+다시 센다.
+
+### Braze 응답 status 분포
+
+```text
+filter @message like "[API ERROR] brazeUserTrackAPI"
+| parse @message /"status":(?<st>\d+)/
+| stats count() as c by st
+| sort c desc
+```
+
+### 이벤트 타입별 유입
+
+```text
+filter @message like "Incoming event body"
+| parse @message /"type":\s*"(?<etype>[A-Z_]+)"/
+| stats count() as c by etype
+| sort c desc
+```
+
+### Validation 실패 property
+
+```text
+filter @message like "Validation failed"
+| parse @message /"property":\s*"(?<prop>\w+)"/
+| stats count() as c by prop
+| sort c desc
+```
+
+### 실패 호출 하나 통째로 보기
+
+```text
+filter @requestId = "<requestId>"
+| fields @timestamp, @message
+| sort @timestamp asc
+```
+
+### 이벤트 소스 매핑 확인
+
+```bash
+aws lambda list-event-source-mappings --region ap-northeast-2 \
+  --function-name crm-batch-prod-updateInRealtime \
+  --query 'EventSourceMappings[].{arn:EventSourceArn,batch:BatchSize,
+           window:MaximumBatchingWindowInSeconds,
+           maxConc:ScalingConfig.MaximumConcurrency,
+           respTypes:FunctionResponseTypes,state:State}'
+```
+
+## A.9 남은 확인 항목 (부록 A)
+
+- 소비자 Lambda 레포가 로컬에 없어 코드 확인을 못 했다. 빈 `events` 가드와
+  Braze `try/catch` 위치를 실제 소스에서 확인해야 한다.
+  (생산자는 `gymboxx-app-server`, `gymboxx-pass-server`,
+  `gymboxx-user-app-batch` 에 흩어져 있다.)
+- `AccessHistory` 조회 실패 2,908건이 복제 지연인지, 실제로 없는 행인지
+  DB 대조 필요.
+- DLQ 46건의 내용 — 5회 재시도로도 통과하지 못한 메시지가 무엇인지.
+- `MEMBERSHIP_EXPIRE` 메시지는 `payload.events` 배열로 여러 사용자를 담는다.
+  따라서 메시지 수(15,881)와 사용자 단위 WARN 수(12,837)는 직접 비교할 수 없다.
+  사용자 단위 실제 비율은 별도 집계가 필요하다.

@@ -65,6 +65,7 @@ Claude Code가 연동된 제품 저장소에서 작업할 때 쓰는 도구별 �
 - @docs/ai/test.md
 - @docs/ai/sales.md
 - @docs/ai/db.md
+- @docs/ai/gymboxx.db.md
 
 ## 제품 아키텍처 (플래닝 문서를 위한 배경 지식)
 

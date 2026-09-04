@@ -1,0 +1,11 @@
+```sql
+SELECT
+    waiting_pid,
+    blocking_pid,
+    locked_table,
+    locked_index,
+    wait_age_secs,
+    waiting_query,
+    blocking_query
+FROM sys.innodb_lock_waits;
+```
