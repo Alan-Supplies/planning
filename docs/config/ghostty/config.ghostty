@@ -1,0 +1,8 @@
+font-family = D2Coding
+font-size = 15
+adjust-cell-height = 60%
+macos-titlebar-style = native
+background = 17181c
+foreground = caccd4
+background-opacity = 1
+background-blur = 0
