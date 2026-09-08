@@ -1,0 +1,11 @@
+### user_exercise_metadata
+
+```sql
+SELECT purpose, count(*) FROM user_exercise_metadata
+  group by purpose;
+```
+
+```sql
+SELECT * FROM user_exercise_metadata
+  limit 10;
+```
