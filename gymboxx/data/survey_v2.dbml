@@ -1,0 +1,313 @@
+// gymboxx survey_v2 도메인 스키마
+// 출처: 운영 DB(db-ro.gymboxx.prod.supp.kr / gymboxx) SHOW CREATE TABLE 기준
+// 추출일: 2026-09-08
+//
+// 범위: survey_v2 를 중심으로 FK 로 직접 연결된 테이블 전체 + 2촌 소비 테이블.
+//       user / trainer 등 도메인 밖 테이블은 연결 확인용 스텁(일부 컬럼만)으로 둔다.
+
+Project gymboxx_survey_v2 {
+  database_type: 'MySQL'
+  Note: '''
+    설문 v2 스키마. survey_key(설문 식별자) 아래에 survey_v2(버전)가 쌓이고,
+    key 당 ACTIVE 버전은 1개만 존재한다(생성 컬럼 active_slot + UNIQUE).
+    응답은 회원(user_survey_submit)과 트레이너(trainer_survey_submit)로 분리되어 있으며,
+    두 응답 테이블 구조는 대칭이다.
+  '''
+}
+
+// ─────────────────────────────────────────────
+// Enums
+// ─────────────────────────────────────────────
+
+Enum survey_status {
+  DRAFT   [note: '작성중']
+  ACTIVE  [note: '활성 - key 당 1개만 가능']
+  ARCHIVED [note: '보관']
+  INACTIVE [note: '비활성']
+}
+
+Enum survey_question_type {
+  SINGLE_SELECT
+  MULTI_SELECT
+  TEXT_GROUP
+  TIMETABLE
+}
+
+Enum survey_option_type {
+  SELECT
+  SELECT_TEXT
+  TEXT
+  TIMETABLE
+}
+
+// ─────────────────────────────────────────────
+// 설문 정의 (definition)
+// ─────────────────────────────────────────────
+
+Table survey_key {
+  id int [pk, increment]
+  "key" varchar(255) [not null, note: '설문 KEY (EXERCISE_ONBOARDING / EXERCISE_RECOMMENDATION_SATISFACTION / PT_CONSULTING / PT_CONSULTING_PLAN)']
+  max_submission_count "int unsigned" [null, note: '최대 설문 응답 회수 (NULL = 무제한)']
+  is_reserved boolean [not null, default: 0, note: '예약 설문 여부 (true = 앱 하드코딩 전용, 어드민 편집 금지)']
+  is_public boolean [not null, default: 0, note: '공개 설문 여부 (true = 토큰 없이 조회/제출 가능)']
+
+  Note: '설문 키 테이블. 버전(survey_v2)의 상위 식별자.'
+}
+
+Table survey_v2 {
+  id int [pk, increment]
+  survey_key_id int [not null, note: '설문 식별 키 id']
+  version int [not null, note: '설문 버전']
+  name varchar(255) [not null, note: '설문 이름']
+  status survey_status [not null, default: 'DRAFT', note: '설문 버전 상태']
+  active_slot int [null, note: 'STORED 생성 컬럼: status=ACTIVE 일 때만 survey_key_id, 아니면 NULL. UNIQUE 로 key 당 ACTIVE 1건 강제']
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [not null, default: `CURRENT_TIMESTAMP`, note: 'ON UPDATE CURRENT_TIMESTAMP']
+
+  indexes {
+    (survey_key_id, version) [unique, name: 'uk_survey_key_version']
+    active_slot [unique, name: 'uk_active_per_key']
+  }
+
+  Note: '설문 버전 테이블. 응답 테이블은 모두 이 id 를 survey_id 로 참조한다.'
+}
+
+Table survey_question {
+  id int [pk, increment]
+  survey_id int [not null, note: '설문 ID (FK → survey_v2)']
+  section_number "int unsigned" [not null, default: 0, note: '섹션 번호(프로그레스 상)']
+  max_select_count "int unsigned" [not null, default: 1, note: '최대 선택 가능 개수']
+  is_option_shuffled boolean [not null, default: 0, note: '옵션 노출 순서 랜덤 여부']
+  type survey_question_type [not null, note: '질문 타입']
+  is_required boolean [not null, default: 1, note: '필수 응답 질문 여부']
+  child_question_id int [null, note: '연결된 다음 질문 id (자기참조)']
+  is_main boolean [not null, default: 0, note: '1번 여부']
+  title varchar(255) [not null, note: '질문 제목']
+  description text [null, note: '질문 설명']
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+
+  indexes {
+    survey_id
+    child_question_id [name: 'survey_question_survey_question_id_fk']
+  }
+
+  Note: '질문. child_question_id 로 기본 다음 질문이 이어지고, 선택지별 분기는 survey_question_option_mapping.to_question_id 가 덮어쓴다.'
+}
+
+Table survey_option {
+  id int [pk, increment]
+  type survey_option_type [not null, note: '옵션 유형']
+  title varchar(255) [not null, note: '옵션 제목 (라벨)']
+  placeholder varchar(255) [not null, note: '입력 플레이스홀더']
+  description text [null, note: '옵션 설명']
+  max_text_length int [null, note: '텍스트 최대 입력 길이']
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+
+  Note: '선택지 마스터. 질문에 직접 매달리지 않고 매핑 테이블로 연결되어 재사용 가능하다.'
+}
+
+Table survey_question_option_mapping {
+  survey_question_id int [not null, note: '설문 질문 id']
+  survey_option_id int [not null, note: '설문 옵션 id']
+  sort_order "int unsigned" [not null, note: '노출 순서']
+  to_question_id int [null, note: '선택 시 다음 질문이 고정되는 질문 id (분기). FK 제약은 없음']
+  is_end boolean [not null, default: 0, note: '설문을 종료시키는 옵션 여부']
+
+  indexes {
+    (survey_option_id, survey_question_id) [pk]
+    survey_question_id [name: 'survey_question_option_mapping_survey_question_id_fk']
+  }
+
+  Note: '질문-옵션 N:M 매핑 + 분기 정보. PK 순서가 (option, question) 이라 question 기준 조회는 보조 인덱스를 탄다.'
+}
+
+// ─────────────────────────────────────────────
+// 회원 응답 (user submission)
+// ─────────────────────────────────────────────
+
+Table user_survey_submit {
+  id int [pk, increment]
+  survey_id int [not null, note: '설문 ID (FK → survey_v2)']
+  user_id int [null, note: '회원 ID (FK, 익명 응답 허용을 위해 NULL 허용)']
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [not null, default: `CURRENT_TIMESTAMP`, note: 'ON UPDATE CURRENT_TIMESTAMP']
+
+  indexes {
+    survey_id
+    user_id
+  }
+
+  Note: '회원 설문 제출 헤더 (1회 응답 = 1행).'
+}
+
+Table user_survey_submit_answer {
+  id int [pk, increment]
+  survey_id int [not null, note: '설문 ID (FK → survey_v2, 비정규화)']
+  user_survey_submit_id int [not null, note: '회원 설문 제출 ID (FK)']
+  question_id int [not null, note: '질문 ID (FK)']
+  option_id int [null, note: '선택지 ID (FK, 텍스트/타임테이블 응답이면 NULL)']
+  question_label_snapshot varchar(255) [not null, note: '질문 텍스트 스냅샷']
+  option_label_snapshot varchar(255) [null, note: '선택지 텍스트 스냅샷']
+  answer_text text [null, note: '텍스트 답변']
+  weekly_schedule json [null, note: '요일별 시간 스케줄 데이터 (TIMETABLE 타입)']
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [not null, default: `CURRENT_TIMESTAMP`, note: 'ON UPDATE CURRENT_TIMESTAMP']
+
+  indexes {
+    survey_id
+    user_survey_submit_id
+    question_id
+    option_id
+  }
+
+  Note: '회원 응답 상세. 질문/선택지 라벨을 스냅샷으로 함께 저장하므로 정의가 바뀌어도 응답 당시 문구가 남는다.'
+}
+
+// ─────────────────────────────────────────────
+// 트레이너 응답 (trainer submission) — 회원 쪽과 대칭 구조
+// ─────────────────────────────────────────────
+
+Table trainer_survey_submit {
+  id int [pk, increment]
+  survey_id int [not null, note: '설문 ID (FK → survey_v2)']
+  trainer_id int [not null, note: '트레이너 ID (FK)']
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [not null, default: `CURRENT_TIMESTAMP`, note: 'ON UPDATE CURRENT_TIMESTAMP']
+
+  indexes {
+    survey_id
+    trainer_id
+  }
+
+  Note: '트레이너 설문 제출 헤더. user 쪽과 달리 trainer_id 는 NOT NULL (익명 없음).'
+}
+
+Table trainer_survey_submit_answer {
+  id int [pk, increment]
+  survey_id int [not null, note: '설문 ID (FK → survey_v2, 비정규화)']
+  trainer_survey_submit_id int [not null, note: '트레이너 설문 제출 ID (FK)']
+  question_id int [not null, note: '질문 ID (FK)']
+  option_id int [null, note: '선택지 ID (FK)']
+  question_label_snapshot varchar(255) [not null, note: '질문 텍스트 스냅샷']
+  option_label_snapshot varchar(255) [null, note: '선택지 텍스트 스냅샷']
+  answer_text text [null, note: '텍스트 답변']
+  weekly_schedule json [null, note: '요일별 시간 스케줄 데이터']
+  created_at timestamp [not null, default: `CURRENT_TIMESTAMP`]
+  updated_at timestamp [not null, default: `CURRENT_TIMESTAMP`, note: 'ON UPDATE CURRENT_TIMESTAMP']
+
+  indexes {
+    survey_id
+    trainer_survey_submit_id
+    question_id
+    option_id
+  }
+
+  Note: '트레이너 응답 상세.'
+}
+
+// ─────────────────────────────────────────────
+// 응답 소비처 (downstream)
+// ─────────────────────────────────────────────
+
+Table pt_consulting {
+  id int [pk, increment]
+  user_survey_submit_id int [null, unique, note: '회원 설문 제출 ID (FK). PT_CONSULTING 설문 응답 1건과 1:1']
+
+  Note: '[스텁] PT 상담. survey_v2 연결 컬럼만 표기.'
+}
+
+Table pt_consulting_plan {
+  id int [pk, increment]
+  trainer_survey_submit_id int [null, note: '트레이너 설문 제출 ID (FK). PT_CONSULTING_PLAN 설문 응답']
+
+  Note: '[스텁] PT 상담 설계서. survey_v2 연결 컬럼만 표기.'
+}
+
+Table exercise_recommendation_log {
+  id "int unsigned" [pk, increment]
+  survey_submit_id int [null, note: '설문 제출 id (FK → user_survey_submit)']
+
+  Note: '[스텁] 운동 추천 로그. EXERCISE_ONBOARDING 응답을 입력으로 사용.'
+}
+
+// ─────────────────────────────────────────────
+// 도메인 밖 참조 테이블 (스텁)
+// ─────────────────────────────────────────────
+
+Table user {
+  id int [pk, increment]
+  name varchar(30) [not null]
+  phone varchar(100) [null, unique]
+  created_at timestamp [not null]
+
+  Note: '[스텁] 회원. 실제 테이블에는 컬럼이 더 많다.'
+}
+
+Table trainer {
+  id int [pk, increment]
+  name varchar(30) [not null, note: '트레이너 이름']
+  created_at timestamp [not null]
+
+  Note: '[스텁] 트레이너. 실제 테이블에는 컬럼이 더 많다.'
+}
+
+// ─────────────────────────────────────────────
+// Relations (실제 FK 제약 기준)
+// ─────────────────────────────────────────────
+
+// 정의
+Ref survey_v2_survey_key_id_fk: survey_v2.survey_key_id > survey_key.id
+Ref survey_question_ibfk_1: survey_question.survey_id > survey_v2.id
+Ref survey_question_survey_question_id_fk: survey_question.child_question_id > survey_question.id
+Ref survey_question_option_mapping_survey_question_id_fk: survey_question_option_mapping.survey_question_id > survey_question.id
+Ref survey_question_option_mapping_survey_option_id_fk: survey_question_option_mapping.survey_option_id > survey_option.id
+
+// 회원 응답
+Ref user_survey_submit_ibfk_1: user_survey_submit.survey_id > survey_v2.id
+Ref user_survey_submit_ibfk_2: user_survey_submit.user_id > user.id
+Ref user_survey_submit_answer_ibfk_1: user_survey_submit_answer.survey_id > survey_v2.id
+Ref user_survey_submit_answer_ibfk_2: user_survey_submit_answer.user_survey_submit_id > user_survey_submit.id
+Ref user_survey_submit_answer_ibfk_3: user_survey_submit_answer.question_id > survey_question.id
+Ref user_survey_submit_answer_ibfk_4: user_survey_submit_answer.option_id > survey_option.id
+
+// 트레이너 응답
+Ref trainer_survey_submit_ibfk_1: trainer_survey_submit.survey_id > survey_v2.id
+Ref trainer_survey_submit_ibfk_2: trainer_survey_submit.trainer_id > trainer.id
+Ref trainer_survey_submit_answer_ibfk_1: trainer_survey_submit_answer.survey_id > survey_v2.id
+Ref trainer_survey_submit_answer_ibfk_2: trainer_survey_submit_answer.trainer_survey_submit_id > trainer_survey_submit.id
+Ref trainer_survey_submit_answer_ibfk_3: trainer_survey_submit_answer.question_id > survey_question.id
+Ref trainer_survey_submit_answer_ibfk_4: trainer_survey_submit_answer.option_id > survey_option.id
+
+// 소비처
+Ref fk_pt_consulting_user_survey_submit: pt_consulting.user_survey_submit_id - user_survey_submit.id
+Ref pt_consulting_plan_ibfk_4: pt_consulting_plan.trainer_survey_submit_id > trainer_survey_submit.id
+Ref exercise_recommendation_log_user_survey_submit_id_fk: exercise_recommendation_log.survey_submit_id > user_survey_submit.id
+
+// 분기용 to_question_id 는 DB FK 제약이 없으나 논리적으로 survey_question.id 를 가리킨다.
+// Ref: survey_question_option_mapping.to_question_id > survey_question.id
+
+TableGroup "설문 정의" {
+  survey_key
+  survey_v2
+  survey_question
+  survey_option
+  survey_question_option_mapping
+}
+
+TableGroup "회원 응답" {
+  user_survey_submit
+  user_survey_submit_answer
+}
+
+TableGroup "트레이너 응답" {
+  trainer_survey_submit
+  trainer_survey_submit_answer
+}
+
+TableGroup "소비처 / 외부" {
+  pt_consulting
+  pt_consulting_plan
+  exercise_recommendation_log
+  user
+  trainer
+}
