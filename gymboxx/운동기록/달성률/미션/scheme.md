@@ -1,7 +1,10 @@
 # 목표·미션 스키마 초안
 
+> 2026-09-09: 테이블명 `user_goal`, `user_mission`, `user_goal_attendance_time`은 60% 확정, 컬럼은 재검토 대상이다.
+> 구현 요구사항은 [specification.md](specification.md), 검증 케이스는 [테스트목록.md](테스트목록.md)를 함께 읽는다. 아래 인터페이스에는 유산소 강도 제거를 반영했으며 나머지 새 보완안은 아직 반영하지 않았다.
+
 > 기준: TECH-601 · TECH-602 · TECH-1382를 정리한
-> [`목표및미션시스템설계.md`](목표및미션시스템설계.md).
+> [`목표및미션시스템설계.md`](../목표및미션시스템설계.md).
 > 주 단위 달성률·300% 캡은 구판이므로 반영하지 않는다.
 
 ## 공통 타입
@@ -41,8 +44,6 @@ type BodyPart =
   | 'ARM'
   | 'LEG'
   | 'CORE';
-
-type CardioIntensity = 'ANY' | 'MODERATE' | 'VIGOROUS';
 
 type DayOfWeek =
   | 'MONDAY'
@@ -112,11 +113,11 @@ interface UserMission {
 
   /**
    * BODY_PART_SET/BODY_PART_VOLUME: BodyPart
-   * CARDIO_MINUTE: CardioIntensity
+   * CARDIO_MINUTE: null (exercise.training_type = CARDIO, 강도 구분 없음)
    * STRETCHING_MINUTE: BodyPart | null
    * null 스트레칭은 특정 부위가 없는 전신 스트레칭을 뜻한다.
    */
-  targetParam: BodyPart | CardioIntensity | null;
+  targetParam: BodyPart | null;
 
   /** 부여 시 계산해 고정하는 분모 스냅샷 */
   targetTotal: number;
@@ -147,7 +148,7 @@ interface UserMission {
 |---|---|---|
 | `BODY_PART_SET` | 부위 6종 | 기여도 반영 세트분 |
 | `BODY_PART_VOLUME` | 부위 6종 | kg 환산 총 훈련량 |
-| `CARDIO_MINUTE` | 강도 3종 | 중강도 환산 분 |
+| `CARDIO_MINUTE` | `null` | 실제 운동 분 |
 | `STRETCHING_MINUTE` | 부위 또는 `null` | 분 |
 
 효과별 세션 수는 마스터 데이터가 준비되지 않아 보류하고, 출석 일수는 폴백 스펙이 확정되기 전까지 1차 타입에서 제외한다.
@@ -208,3 +209,26 @@ interface UserGoalAttendanceTime {
 - 로테이션 마스터 변경에 대비한 우선순위 절대 위치 저장 여부
 - 기록 수정으로 100% 미만이 된 `CLEARED` 미션의 상태 복귀 여부
 - `MissionMetricType`의 최종 DB enum 이름
+
+
+## 2026-09-09 요구사항 기반 재검토 메모
+
+[요구사항](specification.md)의 **보완안**은 PO 확정이 아니며, 다음 사항을 결정한 후 인터페이스/DDL에 반영한다.
+
+| 검토 대상 | 요구사항에서 필요해진 정보·동작 |
+|---|---|
+| `UserGoal` 삭제 표시 | soft delete 보완안(R31). deletedAt 또는 동등한 컬럼 필요. 기존 상태를 덮어 삭제를 표현하지 않기 |
+| 생성 입력 보존 | 생성 당시 세그먼트·로테이션/분류 규칙 버전 또는 스냅샷(R07/R08/R16). 현재 회원 정보만 조회해서 과거 규칙을 바꾸지 않기 |
+| `CLEARED` 역전이 | 기록 정정 시 IN_PROGRESS로 복귀(R28). clearedAt은 최초 도달 시각 유지, 교체 권한은 현재 rate로 판정 |
+| `assignedAt`의 원천 비교 | 세션 started_at 기준 반개구간과 종료 조건(R19). created_at/end_at 중 임의 선택 금지 |
+| `REPLACED`/`CLOSED` | 종료 시 마지막 분자/비율을 보존하며 이후 정정에 불변(R29) |
+| 타입별 파라미터·단위 | 유산소는 training_type=CARDIO의 실제 분 합산(R23), 볼륨은 이미 저장된 kg(R22). 분모 기준량도 같은 단위 필요 |
+| 계산 진단·소수 | 마지막 계산 시각, 분자/비율 정밀도, 동시 갱신 방식 검토(R25/R27). 도달 여부에 표시 반올림 사용 금지 |
+| 유일성과 트랜잭션 | MySQL의 활성 목표/현재 슬롯 제약과 회원 단위 직렬화(R34). 전량 재산출만으로 경합이 해소되지는 않음 |
+| 1차 미지원 | 65세 이상 균형 구성·효과세션·출석 폴백, 데이터 미준비 구성은 R17/R18의 개방 조건 확인 |
+
+`ATHLETIC_PERFORMANCE` 추가는 이번 요구사항 범위에서 채택하지 않는다. 현재 목적 5종을 유지한다. 컬럼명이 확정되면 요구사항 ID와 테스트 ID를 유지한 채 물리 필드 매핑만 갱신한다.
+
+운영 DB를 읽기 전용으로 대조한 결과, 세트 `duration_second`/`done_at`은 이미 존재하지만 최근 1,000건에서 모두 NULL이었다. 기여도·유산소 강도는 아직 없고 `weight_role=ASSIST`는 존재한다. 시간 원천·레거시 호환·보조중량 제외는 요구사항 R22/R37 및 테스트 D01~D09를 먼저 확인한다. 운영 스키마와 worktree 라이브러리는 일치하지 않는다.
+
+2026-09-09 사용자 방향 반영: 유산소 강도 타입을 제거하고 CARDIO_MINUTE의 targetParam을 null, 단위를 실제 분으로 변경했다. 강도 컬럼 신설은 필요 없다. 대신 현재 exercise.training_type 분류의 오탐·누락 정비(R38)가 선행한다.
