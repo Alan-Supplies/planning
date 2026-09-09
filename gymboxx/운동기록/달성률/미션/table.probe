@@ -8,3 +8,58 @@ select * from survey;
 select * from survey_v2;
 ```
 
+### exercise_effect
+```sql
+select distinct(effect_tag) from exercise_effect;
+```
+
+### exercise_body_part group by exercise_id
+```sql
+select ebp.exercise_id, count(ebp.body_part_id)
+  , e.name as exercise_name
+  , group_concat(bp.part) as body_parts
+  , m.name as machine_name
+  from exercise_body_part ebp
+    left join body_part bp on ebp.body_part_id = bp.id
+    left join exercise e on ebp.exercise_id = e.id
+    left join machine m on e.machine_id = m.id
+  group by exercise_id
+  having count(body_part_id) > 1;
+```
+
+### body_part
+```sql
+select * from body_part;
+```
+### exercise_machine
+```sql
+select count(machine_id) from exercise_machine
+  group by machine_id
+  having count(machine_id) > 1;
+```
+```sql
+select count(exercise_id) from exercise_machine
+  group by exercise_id
+  having count(exercise_id) > 1;
+```
+
+### exercise.training_type
+```sql
+select distinct(training_type) from exercise;
+```
+### machine.type
+```sql
+select distinct(type) from machine;
+```
+### exercise.type
+```sql
+select distinct(type) from exercise;
+```
+### exercise
+```sql
+select distinct(equipment_type) from exercise;
+```
+### machine.type_detail
+```sql
+select distinct(type_detail) from machine;
+```

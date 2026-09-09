@@ -63,30 +63,13 @@ type DayOfWeek =
 interface UserGoal {
   id: Id;
   userId: Id;
-
-  /** 객관식 문구이면 마스터 FK, 직접 입력이면 null */
-  goalPhraseId: Id | null;
-
-  /** 마스터 수정 뒤에도 과거 표시를 보존하는 문구 스냅샷 */
-  phrase: string;
-
-  /** 미션 생성 규칙의 입력값. 선택 문구에서 결정해 스냅샷 저장 */
-  purpose: GoalPurpose;
-
-  /** 목표를 선택한 이유 */
-  reason: string;
-
+  goalPhraseId: Id | null; /** 객관식 문구이면 마스터 FK, 직접 입력이면 null */
+  purpose: GoalPurpose; /** 미션 생성 규칙의 입력값. 선택 문구에서 결정해 스냅샷 저장 */
+  phrase: string; /** 마스터 수정 뒤에도 과거 표시를 보존하는 문구 스냅샷 */
   status: UserGoalStatus;
-
-  /** 사용자에게 안내할 설정 종료일. 자동 종료나 미션 달성률 계산에는 쓰지 않음 */
-  plannedEndOn: LocalDate | null;
-
-  /** 목표 활성화 시각이자 완료 결과 지표의 집계 시작점 */
-  startedAt: DateTime;
-
-  /** 사용자가 완료 또는 변경을 확정한 시각. ACTIVE이면 null */
-  endedAt: DateTime | null;
-
+  duration: string; // 주단위
+  startedAt: DateTime; /** 목표 활성화 시각이자 완료 결과 지표의 집계 시작점 */
+  endedAt: DateTime | null; /** 사용자가 완료 또는 변경을 확정한 시각. ACTIVE이면 null */
   createdAt: DateTime;
   updatedAt: DateTime;
 }
@@ -102,43 +85,17 @@ interface UserGoal {
 interface UserMission {
   id: Id;
   userGoalId: Id;
-
-  /** 목표 안의 고정 슬롯 번호 */
-  slotNo: 1 | 2 | 3 | 4 | 5;
-
+  slotNo: 1 | 2 | 3 | 4 | 5; /** 목표 안의 고정 슬롯 번호 */
   /** 같은 슬롯에서 몇 번째로 부여된 미션인지 나타내는 회차. 최초 1 */
   slotGeneration: number;
-
-  metricType: MissionMetricType;
-
-  /**
-   * BODY_PART_SET/BODY_PART_VOLUME: BodyPart
-   * CARDIO_MINUTE: null (exercise.training_type = CARDIO, 강도 구분 없음)
-   * STRETCHING_MINUTE: BodyPart | null
-   * null 스트레칭은 특정 부위가 없는 전신 스트레칭을 뜻한다.
-   */
-  targetParam: BodyPart | null;
-
-  /** 부여 시 계산해 고정하는 분모 스냅샷 */
+  training_type: 'MUSCLE' | 'CARDIO' | 'STRETCHING'
+  bodyPart: BodyPart | null;
   targetTotal: number;
-
-  /** assignedAt 이후 유효 기록 전체를 재집계한 분자 */
-  numerator: number;
-
-  /** numerator / targetTotal. 1.0 = 100%, 상한 없음 */
-  rate: number;
-
+  numerator: number; /** assignedAt 이후 유효 기록 전체를 재집계한 분자 */
   status: UserMissionStatus;
-
-  /** 이 미션의 집계 기산점 */
   assignedAt: DateTime;
-
-  /** 최초로 rate >= 1.0이 된 시각 */
-  clearedAt: DateTime | null;
-
-  /** REPLACED 또는 CLOSED로 종결된 시각 */
+  clearedAt: DateTime | null; /** 최초로 rate >= 1.0이 된 시각 */
   endedAt: DateTime | null;
-
   createdAt: DateTime;
   updatedAt: DateTime;
 }

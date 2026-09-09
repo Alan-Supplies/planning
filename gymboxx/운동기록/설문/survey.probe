@@ -1,0 +1,60 @@
+### admin 계정
+```sql
+select * from employee;
+```
+
+### hq 생성 흐름
+survey_v2 생성
+
+### survey_v2
+```sql
+select * from survey_v2
+  order by id desc
+  limit 3;
+```
+
+### survey_v2 with relation
+```sql
+select s.id, s.version, s.name as survey_name, s.status as survey_status
+  , k.*
+  from survey_v2 s
+  left join survey_key k on s.survey_key_id = k.id
+  order by s.id desc
+  limit 3;
+```
+
+### survey with user
+```sql
+select s.id, s.version, s.name as survey_name, s.status as survey_status
+  , k.*
+  from survey_v2 s
+  left join survey_key k on s.survey_key_id = k.id
+  order by s.id desc
+  limit 3;
+```
+
+### user_survey_submit
+```sql
+select *
+  from user_survey_submit as us
+  order by us.id desc
+  limit 3;
+```
+
+### user_survey_submit_answer with survey_v2
+```sql
+select usa.id, usa.question_id, question_label_snapshot, option_label_snapshot
+  , us.survey_id
+  -- , sq.section_number, sq.is_main
+  , sq.title
+  , so.type, so.title, so.created_at
+  from user_survey_submit_answer as usa
+  join user_survey_submit as us
+    on usa.user_survey_submit_id = us.id
+  join survey_question as sq
+    on usa.question_id = sq.id
+  join survey_option as so
+    on usa.option_id = so.id
+  order by usa.id desc
+  limit 3;
+```
