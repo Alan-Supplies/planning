@@ -1,0 +1,388 @@
+# 0902 「진행할 것」 마이그레이션
+
+gymboxx-lib PR #275 의 sqlv4 5파일을 실행 순서대로 옮긴 것.
+아래로 내려가면서 순서대로 실행한다. 각 단계의 점검 쿼리를 먼저 돌려 판정한 뒤 반영 블럭을 실행한다.
+
+- 실측 기준: 2026-09-02 운영(`db-ro.gymboxx.prod.supp.kr`)
+- 998(`measure_type`·`cardio_intensity`·`axis`)은 dev·운영 **양쪽 모두 미적용** → §6 은 건너뛰는 것이 정상
+- `count` 는 분이 아니라 **초** → `duration_second` 백필 계수는 `×1`
+- `training_type` 우선순위는 **MUSCLE > CARDIO > STRETCHING**
+- 어시스트 종목 3종(id 79 · 234 · 235)이 이름으로 특정됨 → §1 마지막 블럭에서 `ASSIST` 정정
+
+---
+
+## §0 현재 상태 확인
+
+신설 3컬럼과 998 3컬럼이 각각 있는지 본다. 재실행 판정에도 쓴다.
+
+```sql
+select table_name, column_name, column_type, is_nullable, column_comment
+from information_schema.columns
+where table_schema = 'gymboxx'
+  and column_name in ('weight_role','duration_second','training_type',
+                      'measure_type','cardio_intensity','axis')
+order by table_name, column_name;
+```
+
+기대: 6행 모두 없음(신설 전 · 998 미적용). 신설 3개가 이미 있으면 해당 단계를 건너뛴다.
+
+---
+
+## §1 · 1/5 — `exercise.weight_role`
+
+### 점검 — has_weight 분포
+
+```sql
+select has_weight, unit, count(*) exercises
+from exercise
+group by has_weight, unit
+order by has_weight desc, unit;
+```
+
+기대(운영 실측 2026-09-02): 합 **273종**
+
+| `has_weight` | 내역 | 합 |
+|---|---|---|
+| 1 | SET/ACTIVE 154 · SET/INACTIVE 33 | **187** |
+| 0 | MINUTE/ACTIVE 23 · SET/ACTIVE 59 · SET/INACTIVE 4 | **86** |
+
+### 반영 — 컬럼 추가
+
+```sql
+alter table exercise
+    add column weight_role enum ('LOAD', 'ASSIST') null comment '무게의 역할(LOAD=회원이 들어 올리는 부하, ASSIST=부하를 덜어 주는 어시스트 장력). 무게 측정 종목만 값을 갖는다' after has_weight;
+```
+
+### 🔴 반영 — 백필 (`has_weight=1` → LOAD)
+
+```sql
+update exercise
+set weight_role = 'LOAD'
+where has_weight = 1
+  and weight_role is null;
+```
+
+### 검증
+
+```sql
+select has_weight, weight_role, count(*) c from exercise group by 1, 2;
+```
+
+기대(어시스트 정정 **전**): `has_weight=1` → `LOAD` **187** · `has_weight=0` → NULL **86**.
+`has_weight=1` 인데 `weight_role` 이 NULL 인 행이 0이어야 한다.
+
+### 🔴 반영 — 어시스트 3종을 ASSIST 로 정정 (선택)
+
+0902검증.probe 실행 결과로 어시스트 종목이 이름으로 특정되었다. 셋 다 `has_weight=1`·`unit='SET'`
+이라 위 백필에서 `LOAD` 가 들어갔으므로, 아래로 정정한다.
+
+| id | 종목 | status |
+|---|---|---|
+| 235 | 머신 어시스트 딥스 | ACTIVE |
+| 234 | 머신 어시스트 풀업 | ACTIVE |
+| 79 | 머신 어시스트 친업 | INACTIVE |
+
+이름이 자명해 트레이너 검수 없이 확정 가능하다고 판단했다. 검수를 거치겠다면 이 블럭을 건너뛰고
+`LOAD` 상태로 남겨 둔다 — 소비측이 아직 이 컬럼을 읽지 않아 당장 계산에 영향은 없다.
+
+```sql
+select id, name, unit, has_weight, status, weight_role
+from exercise where id in (79, 234, 235);
+```
+
+```sql
+update exercise set weight_role = 'ASSIST' where id in (79, 234, 235);
+```
+
+```sql
+select weight_role, count(*) c from exercise group by weight_role;
+```
+
+기대(어시스트 정정 **후**): `LOAD` **184** · `ASSIST` **3** · NULL **86** (합 273).
+정정 전 `LOAD` 187 에서 3종이 옮겨간 것이다.
+
+---
+
+## §2 · 2/5 — `user_exercise_set_history.duration_second`
+
+### 🔴 점검 — 초 전제 검증 (백필 직전 필수)
+여기 진행중!!!
+```sql
+select e.unit, count(*) sets,
+       min(s.count) min_c, round(avg(s.count), 1) avg_c, max(s.count) max_c,
+       round(100 * sum(s.count % 60 = 0) / count(*), 1) pct_mult_60
+from user_exercise_set_history s
+         join user_exercise_session_history h on h.id = s.user_exercise_session_history_id
+         join exercise e on e.id = h.exercise_id
+where e.unit = 'MINUTE'
+group by e.unit;
+```
+
+판정:
+- `avg_c` 가 수백~수천 + `pct_mult_60` 이 100% 근접 → **초 전제 성립. 백필(×1) 진행**
+- `avg_c` 5~60 + `pct_mult_60` 낮음 → **분 데이터 혼재. 백필 중단**, 컬럼 추가까지만
+
+운영 실측: `avg_c` 1138.2 · `min/max` 10/21000 · `pct_mult_60` 100.0(7219/7221).
+
+### 반영 — 컬럼 추가 + `weight`·`count` 코멘트 정정
+
+타입·nullable 은 그대로다. 코멘트만 바뀐다.
+
+```sql
+alter table user_exercise_set_history
+    add column duration_second int unsigned null comment '수행 시간(초). 시간 측정 종목만 값을 갖는다' after weight,
+    modify column weight decimal(10, 7) null comment '중량(kg 고정. 입력 단위는 저장하지 않는다)',
+    modify column count int unsigned not null comment '횟수(시간 측정 종목은 duration_second 로 이관. 과거 행에는 초값이 그대로 잔존)';
+```
+
+### 🔴 반영 — 백필 (`count` → `duration_second`, 계수 ×1)
+
+원본 `count` 는 지우지 않는다(복구 근거 보존).
+
+```sql
+update user_exercise_set_history s
+    join user_exercise_session_history h on h.id = s.user_exercise_session_history_id
+    join exercise e on e.id = h.exercise_id
+set s.duration_second = s.count
+where e.unit = 'MINUTE'
+  and s.duration_second is null;
+```
+
+### 검증 — 백필 행수 · 분포
+
+```sql
+select count(*) filled from user_exercise_set_history where duration_second is not null;
+select min(duration_second) min_d, round(avg(duration_second),1) avg_d, max(duration_second) max_d
+from user_exercise_set_history where duration_second is not null;
+```
+
+`filled` 는 위 점검의 `sets` 와 같아야 한다.
+
+### 검증 — `count` ↔ `duration_second` 정합 (0행이어야 함)
+
+```sql
+select s.user_exercise_session_history_id, s.set_number, s.count, s.duration_second
+from user_exercise_set_history s
+where s.duration_second is not null and s.duration_second <> s.count;
+```
+
+---
+
+## §3 · 3/5 — `exercise.training_type`
+
+### 점검 — 백필 결과 미리보기
+
+```sql
+select derived, count(*) c
+from (select e.id,
+             case when max(bp.part in ('CHEST','BACK','SHOULDER','ARM','LEG','CORE')) then 'MUSCLE'
+                  when max(bp.part = 'CARDIO')     then 'CARDIO'
+                  when max(bp.part = 'STRETCHING') then 'STRETCHING'
+             end as derived
+      from exercise e
+               left join exercise_body_part ebp on ebp.exercise_id = e.id
+               left join body_part bp on bp.id = ebp.body_part_id
+      group by e.id) t
+group by derived;
+```
+
+기대(운영 실측): MUSCLE 253 · CARDIO 13 · STRETCHING 7 · NULL 0 (합 273).
+
+### 점검 — 부위 겹침 (20종 기대, 전부 MUSCLE 로 확정됨)
+
+```sql
+select e.id, e.name, group_concat(distinct bp.part order by bp.part) parts
+from exercise e
+         join exercise_body_part ebp on ebp.exercise_id = e.id
+         join body_part bp on bp.id = ebp.body_part_id
+group by e.id, e.name
+having sum(bp.part in ('CARDIO','STRETCHING')) > 0
+   and sum(bp.part in ('CHEST','BACK','SHOULDER','ARM','LEG','CORE')) > 0;
+```
+
+기대: 20종(스트레칭+근육 15 · 유산소+근육 5). 근육 라벨을 겸하면 MUSCLE 이 우선한다.
+
+### 반영 — 컬럼 추가 (nullable)
+
+NOT NULL 전환은 후속이다 — app-server 종목 등록 경로가 `training_type` 을 보내기 시작한 뒤에 한다.
+
+```sql
+alter table exercise
+    add column training_type enum ('MUSCLE', 'CARDIO', 'STRETCHING') null comment '훈련 유형(MUSCLE=근력, CARDIO=유산소, STRETCHING=스트레칭). 장비 분류(type)와 다른 축이다' after type;
+```
+
+### 🔴 반영 — 백필 (MUSCLE > CARDIO > STRETCHING)
+
+```sql
+update exercise e
+set e.training_type = (
+    select case
+               when max(bp.part in ('CHEST','BACK','SHOULDER','ARM','LEG','CORE')) then 'MUSCLE'
+               when max(bp.part = 'CARDIO')     then 'CARDIO'
+               when max(bp.part = 'STRETCHING') then 'STRETCHING'
+               end
+    from exercise_body_part ebp
+             join body_part bp on bp.id = ebp.body_part_id
+    where ebp.exercise_id = e.id
+)
+where e.training_type is null;
+```
+
+### 검증 — 분포 · 잔여 NULL (0행 기대)
+
+```sql
+select training_type, count(*) c from exercise group by training_type;
+select e.id, e.name, e.type, e.unit, e.has_weight, e.status
+from exercise e
+where e.training_type is null
+order by e.status, e.id;
+```
+
+잔여 NULL 이 나오면 부위 매핑 없이 등록된 신규 종목이다. 목록을 확인하고 개별 지정한다.
+
+---
+
+## §4 · 4/5 — 998 `exercise.measure_type` · `cardio_intensity` 제거
+
+### 점검 — 컬럼 존재 여부
+
+```sql
+select column_name from information_schema.columns
+where table_schema = 'gymboxx' and table_name = 'exercise'
+  and column_name in ('measure_type', 'cardio_intensity');
+```
+
+**0행이면 998 미적용 → 이 단계 전체를 건너뛴다.**
+
+✅ 확인 완료(0902검증.probe) — 운영에서 `select cardio_intensity ...` 와 `select measure_type ...` 이
+둘 다 `ERROR 1054 Unknown column` 이었다. **998 미적용 확정이므로 이 단계는 건너뛴다.**
+아래 블럭들은 998 이 적용된 환경(향후 dev 재구축 등)을 위해 남긴다.
+
+### 점검 — `cardio_intensity` 값 존재 (위가 0행이 아닐 때만)
+
+```sql
+select cardio_intensity, count(*) c from exercise group by cardio_intensity;
+```
+
+**NULL 아닌 값이 있으면 중단·보고.** 값 부여 이력이 있다는 뜻이므로 제거 판단을 다시 한다.
+
+### 🔴 반영 — 제거
+
+```sql
+alter table exercise
+    drop column cardio_intensity,
+    drop column measure_type;
+```
+
+---
+
+## §5 · 5/5 — 998 `body_part.axis` 제거
+
+### 점검
+
+```sql
+select column_name from information_schema.columns
+where table_schema = 'gymboxx' and table_name = 'body_part' and column_name = 'axis';
+```
+
+0행이면 건너뛴다. `axis` 의 역할은 `training_type` 이 대체한다.
+
+✅ 확인 완료(0902검증.probe) — `select axis ...` 가 `ERROR 1054` 였다. **미적용 확정, 건너뛴다.**
+
+### 🔴 반영 — 제거
+
+```sql
+alter table body_part
+    drop column axis;
+```
+
+---
+
+## §6 최종 확인
+
+```sql
+select table_name, column_name, column_type, is_nullable, column_comment
+from information_schema.columns
+where table_schema = 'gymboxx'
+  and column_name in ('weight_role','duration_second','training_type','count','weight',
+                      'measure_type','cardio_intensity','axis')
+order by table_name, column_name;
+```
+
+기대: 신설 3개 존재 · 998 3개 없음 · `count`/`weight` 코멘트 정정 반영.
+
+---
+
+## §7 롤백
+
+### 신설 3컬럼 제거
+
+```sql
+alter table exercise drop column weight_role;
+```
+
+```sql
+alter table exercise drop column training_type;
+```
+
+```sql
+alter table user_exercise_set_history
+    drop column duration_second,
+    modify column weight decimal(10, 7) null comment '중량(kg/lb)',
+    modify column count int unsigned not null comment '횟수 or 초';
+```
+
+### 998 3컬럼 재도입 (제거를 되돌릴 때만)
+
+```sql
+alter table exercise
+    add column measure_type enum ('WEIGHT_REPS','REPS','DURATION') null after unit,
+    add column cardio_intensity enum ('MODERATE','VIGOROUS') null after measure_type;
+```
+
+```sql
+update exercise
+set measure_type = case when unit = 'SET' and has_weight = 1 then 'WEIGHT_REPS'
+                        when unit = 'SET' and has_weight = 0 then 'REPS'
+                        when unit = 'MINUTE' and has_weight = 0 then 'DURATION' end
+where measure_type is null;
+```
+
+NULL 이 0행인지 확인한 뒤에만 NOT NULL 전환한다.
+
+```sql
+select count(*) remain from exercise where measure_type is null;
+```
+
+```sql
+alter table exercise modify column measure_type enum ('WEIGHT_REPS','REPS','DURATION') not null;
+```
+
+```sql
+alter table body_part add column axis enum ('MUSCLE','MODALITY') null after part;
+```
+
+```sql
+update body_part set axis = if(part in ('CARDIO','STRETCHING'), 'MODALITY', 'MUSCLE') where axis is null;
+```
+
+```sql
+select count(*) remain from body_part where axis is null;
+```
+
+```sql
+alter table body_part modify column axis enum ('MUSCLE','MODALITY') not null;
+```
+
+---
+
+## 후속 (이 마이그레이션 범위 밖)
+
+- `training_type` **NOT NULL 전환** — app-server 종목 등록 경로 수정 후
+- `ASSIST` 를 총부하·1RM 에 어떻게 반영할지 — **미정.** 차감(`− count × weight`)인지 실효 부하
+  (`체중 − weight`)인지에 따라 소비측 계산이 갈린다. lib 컬럼 코멘트에는 계산식을 넣지 않았다.
+  (`weight_role='ASSIST'` 부여 자체는 §1 마지막 블럭으로 이번에 처리 가능하다.)
+
+- app-server `duration_second` 이중 수용 경로 (`unit='MINUTE'` + 미전송이면 `count` 를 ×1 로 채움)
+- `ExerciseTypeFilter` 를 `training_type` 한 조건으로 단일화
+- `body_part` 의 CARDIO·STRETCHING 정리 — **위 단일화 이후에만**

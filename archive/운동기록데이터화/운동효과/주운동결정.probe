@@ -1,0 +1,93 @@
+1.  STRENGTH 검수 대상 (28종 — 241 포함)
+근육 부위 라벨(가슴/등/어깨/팔/다리/코어)을 가지면서 이미 ENDURANCE나 MOBILITY 태그를 갖고 있던 종목들. §4 자동 백필에서 일부러 제외했습니다 — 지구력/이완이 섞인 종목에 기계적으로 STRENGTH를 붙이면 "런지 6종·푸시업 2종·스쿼트류가 근력 운동으로 잡히는" 문제를 재생산하기 때문입니다. 트레이너가 두 가지를 판단해야 끝납니다:
+
+(a) 이 종목에 STRENGTH를 추가로 부여할지
+(b) 최종 주 효과(is_primary)가 뭔지
+런지류(5,53,54,145,161,170,260) · 스쿼트류(56,58,155,141) · 플랭크/레그레이즈류(178,220,221,223) · 리버스플라이/토르소로테이션 등(76,125,126,133,137,185,216,240,241,245) · 단독 ENDURANCE/MOBILITY(50,174,215) 가 여기 속합니다.
+
+### 운동 종목 수
+```sql
+select count(*) from exercise e;
+```
+### 운동 효과 수
+```sql
+select distinct effect_tag from exercise_effect ee;
+```
+### 운동당 기능 개수
+```sql
+select e.id, e.name, count(ee.id) from exercise e
+  join exercise_effect ee on e.id = ee.exercise_id
+  group by e.id;
+```
+### 운동 unit
+SET, MINUTE
+```sql
+select distinct(unit) from exercise;
+```
+### 운동 exercise
+```sql
+select * from exercise e
+  order by id desc
+  limit 10;;
+```
+
+### 덤벨 운동 기능, 효과
+```sql
+select e.id, e.name, ef.functional_tag, ee.effect_tag
+  from exercise e
+    join exercise_function ef on e.id = ef.exercise_id
+    left join exercise_effect ee on e.id = ee.exercise_id
+  where e.name like "%덤벨%";
+```
+-- exercise_function가 없는 운동
+```sql
+SELECT e.id, e.name, ef.functional_tag FROM exercise e
+  left join exercise_function ef on e.id = ef.exercise_id
+  where ef.exercise_id is null;
+SELECT count(*) FROM exercise e
+  left join exercise_function ef on e.id = ef.exercise_id
+  where ef.exercise_id is null;
+```
+-- 주 운동 효과 개수
+```sql
+select e.id, e.name, count(ee.id) from exercise e
+  join exercise_effect ee on e.id = ee.exercise_id
+  group by e.id;
+```
+
+-- exercise_effect가 없는 운동
+```sql
+SELECT e.id, e.name FROM exercise e
+  left join exercise_effect ee on e.id = ee.exercise_id
+  where ee.id is null;
+SELECT count(*) FROM exercise e
+  left join exercise_effect ee on e.id = ee.exercise_id
+  where ee.id is null;
+```
+
+-- 주 운동이 없는 종목 조회
+```sql
+SELECT e.id, e.name FROM exercise e
+  join exercise_effect ee on e.id = ee.exercise_id
+  group by e.id
+  having sum(ee.is_primary) = 0;
+select count(*) from (
+  SELECT e.id, e.name FROM exercise e
+    join exercise_effect ee on e.id = ee.exercise_id
+    group by e.id
+    having sum(ee.is_primary) = 0
+) as t;
+```
+-- 주 운동이 두개 이상인 운동
+```sql
+select e.id, e.name, count(ee.id) from exercise e
+  join exercise_effect ee on e.id = ee.exercise_id
+  where ee.is_primary = 1
+  group by e.id
+  having count(ee.id) > 1;
+```
+2. id=81 머신 앱도미널 크런치 — 별도 사유 (1종)
+이 종목은 검수 목록에 없었습니다 — ENDURANCE/MOBILITY가 없어서 §4 자동 STRENGTH 백필 대상이었거든요. 근데 이미 BALANCE 태그를 갖고 있어서, STRENGTH가 추가되자 **태그가 2개(BALANCE, STRENGTH)**가 됐습니다. 주 효과가 STRENGTH인지 BALANCE인지는 별도 판단이 필요합니다.
+
+3. PLYOMETRIC 보류 — 버피(135)·점핑잭(233) (2종)
+지금은 ENDURANCE 태그 하나뿐이라 그대로 자동확정하면 주 효과가 ENDURANCE가 되고, 유산소 시간 목표(주 150분)에 기구 유산소와 똑같이 계상됩니다. 근데 이 둘은 원래 순발력(PLYOMETRIC) 계열이라, PLYOMETRIC 부여 여부가 결정되기 전까지는 "버피를 유산소로 세는" 걸 막기 위해 일부러 보류해뒀습니다.

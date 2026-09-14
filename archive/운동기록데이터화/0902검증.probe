@@ -1,0 +1,172 @@
+# 0902 진행할 것 — 백필 전제 검증
+
+접속: `db-ro.gymboxx.prod.supp.kr` (gymboxx-prod-replica-01, 읽기 전용)
+개발 DB 는 이름이 바뀌었다: `gymboxx-dev` → `dev-gymboxx-rds.cxubxpnokvfs.ap-northeast-2.rds.amazonaws.com`
+
+## 1. duration_second 백필 계수 — count 가 분인가 초인가
+
+`### 진행할 것` 은 "분" 전제이고 백필은 `count * 60` 이다.
+판정: avg 가 5~60 이면 **분**(×60), 60~3600 이면 **초**(×1).
+
+```sql
+select
+  count(*)            as rows_total,
+  min(sh.count)       as min_count,
+  round(avg(sh.count),1) as avg_count,
+  max(sh.count)       as max_count,
+  sum(sh.count > 300) as over_300,
+  sum(sh.count <= 60) as under_60
+from user_exercise_set_history sh
+join user_exercise_session_history sess on sess.id = sh.user_exercise_session_history_id
+join exercise e on e.id = sess.exercise_id
+where e.unit = 'MINUTE';
+```
+
+### 분포 상세 (혼재 여부 확인)
+결과: count는 초다.
+```sql
+select
+  case
+    when sh.count <= 60   then 'a. 1~60 (분 추정)'
+    when sh.count <= 300  then 'b. 61~300 (모호)'
+    else                       'c. 301+ (초 추정)'
+  end as bucket,
+  count(*) as rows,
+  round(avg(sh.count),1) as avg_count
+from user_exercise_set_history sh
+join user_exercise_session_history sess on sess.id = sh.user_exercise_session_history_id
+join exercise e on e.id = sess.exercise_id
+where e.unit = 'MINUTE'
+group by bucket
+order by bucket;
+```
+
+### 종목별 (종목마다 단위가 다른지)
+
+```sql
+SELECT
+    e.name,
+    e.unit,
+    COUNT(*) AS row_count,
+    MIN(sh.count) AS min_c,
+    ROUND(AVG(sh.count), 1) AS avg_c,
+    MAX(sh.count) AS max_c
+FROM user_exercise_set_history sh
+JOIN user_exercise_session_history sess
+    ON sess.id = sh.user_exercise_session_history_id
+JOIN exercise e
+    ON e.id = sess.exercise_id
+WHERE e.unit = 'MINUTE'
+GROUP BY e.id, e.name, e.unit
+ORDER BY row_count DESC;
+```
+result
++-------------------------------+--------+-----------+-------+--------+-------+
+| name                          | unit   | row_count | min_c | avg_c  | max_c |
++-------------------------------+--------+-----------+-------+--------+-------+
+| 인클라인 트레드 밀            | MINUTE |      1554 |    60 | 1515.1 |  7200 |
+| 스텝밀                        | MINUTE |      1552 |    60 | 1121.3 |  5400 |
+| 트레드밀 런                   | MINUTE |      1536 |    60 | 1307.4 | 21000 |
+| 트레드밀 워크                 | MINUTE |      1201 |    60 | 1238.1 |  5760 |
+| 플랭크                        | MINUTE |       571 |    60 |   97.3 |  3600 |
+| 좌식 사이클                   | MINUTE |       221 |   120 | 1318.9 |  3900 |
+| 입식 사이클                   | MINUTE |       214 |   120 |  837.5 |  2520 |
+| 비복근 폼 롤링                | MINUTE |        73 |    60 |  154.5 |  1200 |
+| 외측광근 폼 롤링              | MINUTE |        62 |    60 |  107.4 |   300 |
+| 에어 트위스팅 크런치          | MINUTE |        48 |    60 |  297.5 |  1800 |
+| 에어 바이크                   | MINUTE |        41 |    60 |  471.2 |  1800 |
+| 일립티컬 머신                 | MINUTE |        32 |   100 | 1161.9 |  2400 |
+| 승모근 폼 롤링                | MINUTE |        30 |    60 |  200.0 |   900 |
+| 대퇴직근 폼 롤링              | MINUTE |        27 |    60 |  133.3 |   600 |
+| 회전근개 폼 롤링              | MINUTE |        24 |    60 |  200.0 |  1560 |
+| 대원근 폼 롤링                | MINUTE |        23 |    60 |  161.7 |   600 |
+| 로잉 머신                     | MINUTE |        11 |    10 |  115.5 |   180 |
+| 할로우 홀드                   | MINUTE |         9 |    60 |  173.3 |  1080 |
+| 스플릿 점프 투 박스           | MINUTE |         4 |  1200 | 1200.0 |  1200 |
+| 스탭퍼                        | MINUTE |         2 |   300 |  450.0 |   600 |
+| 플랭크 레그 리프트            | MINUTE |         1 |    60 |   60.0 |    60 |
+## 2. weight_role 백필 대상 행 수
+
+`has_weight = 1` 전건 `LOAD`. ASSIST 는 이번에 부여하지 않는다.
+
+```sql
+select has_weight, unit, status, count(*) as exercises
+from exercise
+group by has_weight, unit, status
+order by has_weight desc, unit, status;
+```
+--- result ---
++------------+--------+----------+-----------+
+| has_weight | unit   | status   | exercises |
++------------+--------+----------+-----------+
+|          1 | SET    | ACTIVE   |       154 |
+|          1 | SET    | INACTIVE |        33 |
+|          0 | MINUTE | ACTIVE   |        23 |
+|          0 | SET    | ACTIVE   |        59 |
+|          0 | SET    | INACTIVE |         4 |
++------------+--------+----------+-----------+
+
+### 어시스트 종목 검수 후보 (이름 기반, 참고용)
+
+```sql
+select id, name, unit, has_weight, status
+from exercise
+where name like '%어시스트%' or name like '%assist%'
+   or name like '%보조%'
+order by name;
+```
+--- result ---
++-----+----------------------------+------+------------+----------+
+| id  | name                       | unit | has_weight | status   |
++-----+----------------------------+------+------------+----------+
+| 235 | 머신 어시스트 딥스         | SET  |          1 | ACTIVE   |
+|  79 | 머신 어시스트 친업         | SET  |          1 | INACTIVE |
+| 234 | 머신 어시스트 풀업         | SET  |          1 | ACTIVE   |
++-----+----------------------------+------+------------+----------+
+## 3. weight 단위 전제 — kg 로만 쌓였는지
+
+`user_exercise_session_history.weight_type` 이 lb 인 집단의 무게 평균이
+kg 집단의 2배 안팎이면 환산 백필을 다시 논의해야 한다.
+
+```sql
+select sess.weight_type,
+       count(*) as sets,
+       round(avg(sh.weight),2) as avg_weight,
+       max(sh.weight) as max_weight
+from user_exercise_set_history sh
+join user_exercise_session_history sess on sess.id = sh.user_exercise_session_history_id
+where sh.weight is not null and sh.weight > 0
+group by sess.weight_type;
+```
+--- result ---
++-------------+--------+------------+-------------+
+| weight_type | sets   | avg_weight | max_weight  |
++-------------+--------+------------+-------------+
+| kg          | 324680 |      37.43 | 999.0000000 |
+| lb          |  46649 |      33.30 | 226.7960000 |
++-------------+--------+------------+-------------+
+## 4. 998 제거 전제 — cardio_intensity 에 값이 들어갔는지
+
+값이 하나라도 있으면 제거 SQL 이 중단되어야 한다.
+해당
+```sql
+select cardio_intensity, count(*) as exercises
+from exercise
+group by cardio_intensity;
+```
+--- result ---
+ERROR 1054 (42S22) at line 1: Unknown column 'cardio_intensity' in 'field list'
+
+### measure_type · axis 현황
+
+```sql
+select measure_type, count(*) as exercises from exercise group by measure_type;
+```
+-- result ---
+ERROR 1054 (42S22) at line 1: Unknown column 'measure_type' in 'field list'
+
+```sql
+select axis, count(*) as body_parts from body_part group by axis;
+```
+--- result ---
+ERROR 1054 (42S22) at line 1: Unknown column 'axis' in 'field list'

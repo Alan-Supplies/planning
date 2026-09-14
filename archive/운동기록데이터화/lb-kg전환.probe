@@ -1,0 +1,14 @@
+- lb-kg 전환
+```sql
+select session_h.id, session_h.weight_type
+  , set_h.count, set_h.weight
+  , e.name as exercise_name, e.unit, e.has_weight, e.movement_pattern
+  from user_exercise_session_history session_h
+  join user_exercise_set_history set_h
+    on session_h.id = set_h.user_exercise_session_history_id
+  join exercise e
+    on session_h.exercise_id = e.id
+  order by session_h.id desc
+  limit 10;
+```
+

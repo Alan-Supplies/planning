@@ -1,0 +1,72 @@
+# 유저 데이터는 뭐가 있지?
+
+- user_exercise_metadata
+```sql
+select * from user_exercise_metadata
+  order by user_id desc
+  limit 15;
+```
+
+## SURVEY
+- user_urvey
+```sql
+select * from user_survey
+  order by id desc
+  limit 15;
+```
+
+```sql
+select * from survey_v2
+  order by id desc
+  limit 15;
+```
+@ManyToOne(() => SurveyKeyEntity, (surveyKey) => surveyKey.surveyV2)
+  @JoinColumn({ name: 'survey_key_id' })
+  surveyKey: SurveyKeyEntity
+
+  @OneToMany(() => SurveyQuestionEntity, (q) => q.survey)
+  surveyQuestion: SurveyQuestionEntity[]
+
+  @OneToMany(() => UserSurveySubmitEntity, (s) => s.survey)
+  userSurveySubmit: UserSurveySubmitEntity[]
+
+  @OneToMany(() => TrainerSurveySubmitEntity, (s) => s.survey)
+  trainerSurveySubmit: TrainerSurveySubmitEntity[]
+
+  @OneToMany(() => UserSurveySubmitAnswerEntity, (a) => a.survey)
+  userSurveySubmitAnswer: UserSurveySubmitAnswerEntity[]
+
+  @OneToMany(() => TrainerSurveySubmitAnswerEntity, (a) => a.survey)
+  trainerSurveySubmitAnswer: TrainerSurveySubmitAnswerEntity[]
+
+- survey question
+```sql
+select * from survey_question
+  order by id desc
+  limit 15;
+```
+
+- survey full data  
+```sql
+select s.id, s.survey_key_id  -- s.name
+  , sq.id, sq.title, sq.description, sq.child_question_id 
+  from survey_v2 s
+  join survey_question sq on s.id = sq.survey_id
+  -- join user_survey_submit on survey_v2.id = user_survey_submit.survey_id
+  -- join user_survey_submit_answer on user_survey_submit.id = user_survey_submit_answer.user_survey_submit_id
+  -- join trainer_survey_submit on survey_v2.id = trainer_survey_submit.survey_id
+  -- join trainer_survey_submit_answer on trainer_survey_submit.id = trainer_survey_submit_answer.trainer_survey_submit_id
+  where s.id = 1;
+  order by s.id desc
+  limit 15;
+```
+
+## USER_SURVEY_SUBMIT
+
+```sql
+select * from user_survey_submit_answer
+  order by id desc
+  limit 15;
+```
+
+## TRAINER_SURVEY_SUBMIT

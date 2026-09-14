@@ -1,0 +1,10 @@
+### unit, 무게 별 set 수
+```sql
+select e.unit, e.has_weight, count(*) as set_rows,
+       min(s.count) as min_v, max(s.count) as max_v, avg(s.count) as avg_v
+  from user_exercise_set_history s
+  join user_exercise_session_history sh on s.user_exercise_session_history_id = sh.id
+  join exercise e on sh.exercise_id = e.id
+ group by e.unit, e.has_weight
+ order by set_rows desc;
+```
