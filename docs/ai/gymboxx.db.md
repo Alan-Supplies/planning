@@ -9,6 +9,12 @@
   user: readonlyuser
   password: supplies12
   database: gymboxx
+- 로컬 DB
+  DB_ENDPOINT=localhost
+  DB_PORT=3306
+  DB_USERNAME=alan
+  DB_PASSWORD=probe0929
+  DB_NAME=gymboxx_local
 
 #### 접속 주의 (2026-09-04 검증)
 
