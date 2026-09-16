@@ -1,0 +1,328 @@
+# TECH-1001 적용 — `equipment_type` 11종 · `contribution` 신설
+
+실행용 최소 파일. 배경·근거·대안 검토는 [equipment_type.probe](equipment_type.probe) 참고.
+
+## 0. 실행 전 확인
+
+- **접속 대상은 라이터다.** `db-ro` 는 리드 레플리카라 쓰기가 안 된다 ([docs/ai/gymboxx.db.md](../../ai/gymboxx.db.md))
+- **개발 → 검증 통과 → 운영** 순서로 적용한다
+- 아래 기대 수치는 **운영 실측 2026-09-16** 기준이다. 개발은 종목 수가 달라(275 vs 274) 값이 다를 수 있으니 개발에서는 §A-1 · §B-1 점검 결과를 기준으로 삼는다
+- 적용 후 `gymboxx-lib` 반영 — §C
+
+적용 순서 — **A(장비) → B(기여도)**. 서로 독립이라 순서를 바꿔도 되지만 검증은 각각 끝내고 넘어간다.
+
+---
+
+# A. `equipment_type` — enum 11종 + 미매핑 백필
+
+## A-1. 사전 점검 (조회)
+
+```sql
+-- 현재 enum 정의와 분포 · 실행 전 스냅샷
+SELECT column_type FROM information_schema.columns
+ WHERE table_schema = 'gymboxx' AND table_name = 'exercise'
+   AND column_name = 'equipment_type';
+
+SELECT IFNULL(equipment_type, '(NULL)') AS eq, COUNT(*) AS cnt
+  FROM exercise GROUP BY equipment_type ORDER BY cnt DESC;
+
+-- PIN·PLATE_LOADED 사용 행 — 0 이면 A-2 를 한 번의 ALTER 로 끝낸다
+SELECT COUNT(*) AS 이관대상 FROM exercise
+ WHERE equipment_type IN ('PIN', 'PLATE_LOADED');
+```
+
+```sql
+-- 백필이 무엇을 건드릴지 행 단위로 미리 본다
+-- 운영 기대: MACHINE 45 · SMITH 12 · CARDIO 11 · (NULL 유지) 9
+SELECT CASE
+         WHEN e.unit = 'MINUTE'      THEN 'CARDIO'
+         WHEN e.name LIKE '%스미스%'  THEN 'SMITH'
+         WHEN EXISTS (SELECT 1 FROM exercise_machine em
+                       WHERE em.exercise_id = e.id) THEN 'MACHINE'
+         ELSE '(NULL 유지)'
+       END      AS 부여예정,
+       COUNT(*) AS cnt,
+       SUM(e.status = 'ACTIVE') AS active
+  FROM exercise e
+ WHERE e.type = 'MACHINE' AND e.equipment_type IS NULL
+ GROUP BY 1 ORDER BY cnt DESC;
+```
+
+## A-2. enum 변경 — 12종에서 11종으로
+
+`PIN`·`PLATE_LOADED` 를 빼고 `MACHINE` 을 넣는다. **A-1 의 `이관대상` 이 0 일 때만 이 블럭을 쓴다.**
+
+```sql
+ALTER TABLE exercise
+  MODIFY COLUMN equipment_type
+    ENUM('MACHINE','SMITH','CABLE','CARDIO','BARBELL','DUMBBELL',
+         'KETTLEBELL','BAND','STRUCTURE','BODYWEIGHT','PROP') NULL
+    COMMENT '장비 분류 11종 · MACHINE = 스미스·케이블·유산소를 제외한 고정 궤도 저항 머신';
+```
+
+`이관대상` 이 0 이 아니면 아래 3단계를 대신 쓴다.
+
+```sql
+-- 1) MACHINE 을 임시로 추가해 13종으로
+ALTER TABLE exercise
+  MODIFY COLUMN equipment_type
+    ENUM('MACHINE','PIN','PLATE_LOADED','SMITH','CABLE','CARDIO','BARBELL',
+         'DUMBBELL','KETTLEBELL','BAND','STRUCTURE','BODYWEIGHT','PROP') NULL;
+
+-- 2) 기존 부여분 이관
+UPDATE exercise SET equipment_type = 'MACHINE'
+ WHERE equipment_type IN ('PIN', 'PLATE_LOADED');
+
+-- 3) 두 값 제거 — 11종
+ALTER TABLE exercise
+  MODIFY COLUMN equipment_type
+    ENUM('MACHINE','SMITH','CABLE','CARDIO','BARBELL','DUMBBELL',
+         'KETTLEBELL','BAND','STRUCTURE','BODYWEIGHT','PROP') NULL
+    COMMENT '장비 분류 11종 · MACHINE = 스미스·케이블·유산소를 제외한 고정 궤도 저항 머신';
+```
+
+## A-3. 백필 — `MACHINE` 77종
+
+**순서 의존(1 → 2 → 3)이 있고 전 문장에 `equipment_type IS NULL` 가드가 있어 재실행이 안전하다.**
+
+```sql
+-- (1) 유산소 11종 — 연결 기구 전건 type = 'CARDIO' 로 교차 검증됨
+UPDATE exercise SET equipment_type = 'CARDIO'
+ WHERE type = 'MACHINE' AND equipment_type IS NULL
+   AND unit = 'MINUTE';
+```
+
+```sql
+-- (2) 스미스 12종 — 연결 기구 전건 type_detail = 'SMITH' 로 교차 검증됨
+UPDATE exercise SET equipment_type = 'SMITH'
+ WHERE type = 'MACHINE' AND equipment_type IS NULL
+   AND name LIKE '%스미스%';
+```
+
+```sql
+-- (3) 나머지 머신 45종 — 기구 연결이 하나라도 있는 종목
+--     기구 미연결 9종(ACTIVE 1 = id 171 인버티드 로우 · INACTIVE 8)은 조건에서 자동으로 빠져
+--     NULL 로 남는다. 171 은 STRUCTURE 재분류 여부가 미결이라 의도된 보류다.
+UPDATE exercise SET equipment_type = 'MACHINE'
+ WHERE type = 'MACHINE' AND equipment_type IS NULL
+   AND EXISTS (SELECT 1 FROM exercise_machine em
+                WHERE em.exercise_id = exercise.id);
+```
+
+## A-4. 검증 (조회)
+
+```sql
+-- (1) 분포 — 운영 기대: MACHINE 45 · DUMBBELL 55 · BODYWEIGHT 41 · BARBELL 31 · CABLE 28
+--     STRUCTURE 15 · SMITH 12 · CARDIO 11 · PROP 11 · BAND 10 · KETTLEBELL 6 · (NULL) 9
+SELECT IFNULL(equipment_type, '(NULL)') AS eq, COUNT(*) AS cnt
+  FROM exercise GROUP BY equipment_type ORDER BY cnt DESC;
+```
+
+```sql
+-- (2) 남은 NULL 전체 — 9행 · 전부 연결기구 0 이어야 한다
+SELECT e.id, e.name, e.type, e.status,
+       (SELECT COUNT(*) FROM exercise_machine em WHERE em.exercise_id = e.id) AS 연결기구
+  FROM exercise e WHERE e.equipment_type IS NULL
+ ORDER BY e.status, e.id;
+```
+
+```sql
+-- (3) CARDIO·SMITH 부여분이 기구 마스터와 어긋나지 않는지
+--     CARDIO 는 m.type 전건 'CARDIO' · SMITH 는 type_detail 전건 'SMITH' 여야 한다
+SELECT e.equipment_type, m.type, m.type_detail, COUNT(*) AS cnt
+  FROM exercise e
+  JOIN exercise_machine em ON em.exercise_id = e.id
+  JOIN machine m           ON m.id = em.machine_id
+ WHERE e.equipment_type IN ('CARDIO', 'SMITH')
+ GROUP BY e.equipment_type, m.type, m.type_detail
+ ORDER BY e.equipment_type, cnt DESC;
+```
+
+```sql
+-- (4) 폐기된 두 값 잔존 — 0행이어야 한다
+SELECT id, name, equipment_type FROM exercise
+ WHERE equipment_type IN ('PIN', 'PLATE_LOADED');
+```
+
+---
+
+# B. `contribution` — 세부 부위 기여도 신설
+
+`exercise_body_part_detail` 의 **부위 기여도**다. `exercise_effect.is_primary`(주 효과, 종목당 1개)와
+다른 축이며, 기여도는 **종목당 `DIRECT` 가 여러 개인 것이 정상**이다(다관절 운동).
+
+## B-1. 사전 점검 (조회)
+
+```sql
+-- (1) 대상 규모 — 운영 기대: 514행 / 248종
+SELECT COUNT(*) AS active_rows, COUNT(DISTINCT exercise_id) AS active_exercises
+  FROM exercise_body_part_detail WHERE status = 'ACTIVE';
+```
+
+```sql
+-- (2) 60% 기준으로 DIRECT 가 몇 개씩 잡히는지 — 백필 없이 미리 계산
+--     운영 기대: 1개 230종 · 2개 16종 · 3개 2종 (합 248)
+--     🔴 direct_count = 0 인 운동이 나오면 백필을 멈추고 원인을 본다(load_ratio 전건 0 등)
+SELECT direct_count, COUNT(*) AS exercises
+  FROM (SELECT d.exercise_id,
+               SUM(d.load_ratio + 0.000001 >= 0.6 * m.mx) AS direct_count
+          FROM exercise_body_part_detail d
+          JOIN (SELECT exercise_id, MAX(load_ratio) AS mx
+                  FROM exercise_body_part_detail
+                 WHERE status = 'ACTIVE' GROUP BY exercise_id) m
+            ON m.exercise_id = d.exercise_id
+         WHERE d.status = 'ACTIVE'
+         GROUP BY d.exercise_id) t
+ GROUP BY direct_count ORDER BY direct_count;
+```
+
+```sql
+-- (3) 사람이 볼 검수 목록 — DIRECT 가 2개 이상 잡히는 종목 (운영 18종)
+--     60% 기준과 "최댓값만" 기준이 갈리는 전부가 여기 있다. 검수는 이 목록만 보면 닫힌다.
+SELECT d.exercise_id, e.name, bpd.detail_part, d.load_ratio, m.mx
+  FROM exercise_body_part_detail d
+  JOIN exercise e           ON e.id = d.exercise_id
+  JOIN body_part_detail bpd ON bpd.id = d.body_part_detail_id
+  JOIN (SELECT exercise_id, MAX(load_ratio) AS mx
+          FROM exercise_body_part_detail
+         WHERE status = 'ACTIVE' GROUP BY exercise_id) m
+    ON m.exercise_id = d.exercise_id
+ WHERE d.status = 'ACTIVE'
+   AND d.load_ratio + 0.000001 >= 0.6 * m.mx
+   AND d.exercise_id IN (
+     SELECT exercise_id FROM (
+       SELECT d2.exercise_id,
+              SUM(d2.load_ratio + 0.000001 >= 0.6 * m2.mx) AS pc
+         FROM exercise_body_part_detail d2
+         JOIN (SELECT exercise_id, MAX(load_ratio) AS mx
+                 FROM exercise_body_part_detail
+                WHERE status = 'ACTIVE' GROUP BY exercise_id) m2
+           ON m2.exercise_id = d2.exercise_id
+        WHERE d2.status = 'ACTIVE'
+        GROUP BY d2.exercise_id) t
+      WHERE t.pc >= 2)
+ ORDER BY d.exercise_id, d.load_ratio DESC;
+```
+
+## B-2. 컬럼 추가
+
+🔴 **`DEFAULT 'ASSIST'` 를 반드시 준다.** 세부 부위 매핑을 INSERT 하는 유일한 경로
+(`gymboxx-headquarter-server` `replaceBodyPartDetails`)는 `exercise_id`·`body_part_detail_id`·
+`load_ratio`·`status` 넷만 보낸다. 기본값이 없으면 그 경로가 즉시 깨진다.
+
+```sql
+ALTER TABLE exercise_body_part_detail
+  ADD COLUMN contribution ENUM('DIRECT','ASSIST') NOT NULL DEFAULT 'ASSIST'
+      COMMENT '부위 기여도(DIRECT=주 부위 · ASSIST=보조 부위)'
+      AFTER load_ratio;
+```
+
+## B-3. 백필 — 그 운동 `ACTIVE` 행의 `load_ratio` 최댓값 대비 60% 이상이면 `DIRECT`
+
+🔴 `status = 'ACTIVE'` 를 **최댓값 계산과 갱신 대상 양쪽에** 건다. INACTIVE 이력 행이 최댓값을
+올리면 살아 있는 주 부위가 보조로 밀리고, 이력 행에 `DIRECT` 가 박히면 그 조합을 되살릴 때
+잘못된 주 부위가 함께 살아난다. (운영은 현재 INACTIVE 0행이지만 조건은 그대로 건다)
+
+🔴 `+ 0.000001` 은 float 경계 오차 보정이다. `load_ratio` 는 0.05 단위 float 이라
+`0.6 * 0.5 = 0.3` 처럼 경계에 정확히 걸리는 조합이 실제로 있고 float 비교에서 false 로 떨어질 수
+있다. 빼면 경계 종목이 조용히 `ASSIST` 가 된다.
+
+**임계값 60% 는 초기값 생성 규칙일 뿐이다.** 판정의 정본은 컬럼 값이며, B-1(3) 검수 결과는
+이 UPDATE 재실행이 아니라 개별 UPDATE 로 반영한다 — 재실행하면 검수분이 덮인다.
+
+```sql
+UPDATE exercise_body_part_detail d
+  JOIN (SELECT exercise_id, MAX(load_ratio) AS mx
+          FROM exercise_body_part_detail
+         WHERE status = 'ACTIVE' GROUP BY exercise_id) m
+    ON m.exercise_id = d.exercise_id
+   SET d.contribution = 'DIRECT'
+ WHERE d.status = 'ACTIVE'
+   AND d.load_ratio + 0.000001 >= 0.6 * m.mx;
+```
+
+기대 결과 — **`DIRECT` 268행 / `ACTIVE` 514행** (운영 기준).
+
+## B-4. 검증 (조회)
+
+```sql
+-- (1) DIRECT 가 하나도 없는 ACTIVE 운동 — 0행이어야 한다
+SELECT d.exercise_id, e.name
+  FROM exercise_body_part_detail d
+  JOIN exercise e ON e.id = d.exercise_id
+ WHERE d.status = 'ACTIVE'
+ GROUP BY d.exercise_id, e.name
+HAVING SUM(d.contribution = 'DIRECT') = 0;
+```
+
+```sql
+-- (2) INACTIVE 이력 행에 박힌 DIRECT — 0 이어야 한다
+SELECT COUNT(*) AS inactive_direct_rows
+  FROM exercise_body_part_detail
+ WHERE status <> 'ACTIVE' AND contribution = 'DIRECT';
+```
+
+```sql
+-- (3) 분포 대조 — 운영 기대: 1개 230종 · 2개 16종 · 3개 2종
+--     DIRECT 복수는 정상이다. exercise_effect 의 "주 효과 1개" 원칙과 다르다
+SELECT direct_count, COUNT(*) AS exercises
+  FROM (SELECT exercise_id, SUM(contribution = 'DIRECT') AS direct_count
+          FROM exercise_body_part_detail
+         WHERE status = 'ACTIVE' GROUP BY exercise_id) t
+ GROUP BY direct_count ORDER BY direct_count;
+```
+
+```sql
+-- (4) 총 행수 — 운영 기대: 268 / 514
+SELECT SUM(contribution = 'DIRECT') AS direct_rows, COUNT(*) AS active_rows
+  FROM exercise_body_part_detail WHERE status = 'ACTIVE';
+```
+
+---
+
+# C. DB 적용 후 남는 일
+
+## C-1. `gymboxx-lib` 반영
+
+|대상|내용|
+|---|---|
+|`src/enum/common.enum.ts`|`EXERCISE_EQUIPMENT_TYPE` 를 **11종**으로 (`PIN`·`PLATE_LOADED` 제거 · `MACHINE` 추가) · `EXERCISE_CONTRIBUTION`(`DIRECT`/`ASSIST`) 추가|
+|`src/entity/exercise.ts` · `entity-camel/`|`equipment_type` 11종 반영|
+|`src/entity/exercise_body_part_detail.ts` · `entity-camel/`|`contribution` 추가|
+|`src/sqlv4/V4_31_7__exercise_equipment_type.sql`|**작성된 내용이 운영과 다르다** — enum 표기가 `_MACHINE` 접미 12종이다. A 절 기준으로 다시 쓴다|
+|`src/sqlv4/V4_31_6__exercise_body_part_detail_is_primary.sql`|`contribution` 설계로 다시 쓰고 파일명도 맞춘다|
+
+두 마이그레이션 모두 미머지 로컬 브랜치 `feature/tech-1001/exercise-record-upgrade` 에만 있다.
+원격 `feature/tech-1001/equipment-type-contribution` 은 폐기된 이전 버전(`V4_30_3`)이라 정리 대상이다.
+
+## C-2. 소비측
+
+|#|내용|
+|---|---|
+|가|`gymboxx-headquarter-server` `replaceBodyPartDetails` 가 `contribution` 을 함께 쓰도록 수정 · "ACTIVE 행 중 `DIRECT` 최소 1개" 서버 검증 추가|
+|나|🔴 `gymboxx-app-server` `ExerciseRecommendationDAO.getAllActiveExercises` 의 `exercise_body_part_detail` relation 에 `status = 'ACTIVE'` 필터가 없다 — INACTIVE 이력 행이 보조근 점수에 섞인다. **`contribution` 과 무관하게 지금 틀린 값을 내는 실버그**|
+|다|`SecondaryMuscleScorer` 는 이름과 달리 세부 부위 목록 전체를 쓴다. `contribution = 'ASSIST'` 만 보게 바꾸면 추천 점수 분포가 바뀌므로 회귀 검증을 붙여 별건으로 한다|
+|라|"주 1.0 / 보조 0.5" 같은 집계 가중치는 컬럼이 아니라 **코드 상수**로 둔다|
+
+## C-3. 미결로 남는 것
+
+|항목|내용|
+|---|---|
+|id 171 인버티드 로우|기구 미연결 `ACTIVE` · `MACHINE` 유지 vs `STRUCTURE` 재분류|
+|미연결 `INACTIVE` 8종|정상 NULL 로 두는 방침 · `NOT NULL` 전환은 이 8종 처리 후|
+|구 `exercise.type` 제거|종료 조건 — NULL 0건 · 대조표 일치 · 참조 코드 0곳|
+|`load_ratio`|삭제하지 않고 원값 유지 · 합계 1.0 제약과 `isLoadRatioValid` 도 그대로 둔다|
+
+## C-4. 롤백
+
+```sql
+-- equipment_type — 값은 지우지 않고 enum 만 되돌린다(PIN·PLATE_LOADED 복원이 필요할 때)
+-- ALTER TABLE exercise MODIFY COLUMN equipment_type
+--   ENUM('PIN','PLATE_LOADED','SMITH','CABLE','CARDIO','BARBELL','DUMBBELL',
+--        'KETTLEBELL','BAND','STRUCTURE','BODYWEIGHT','PROP') NULL;
+
+-- contribution — 컬럼을 지우면 백필과 검수 결과가 함께 사라진다.
+-- load_ratio 원값은 남으므로 B-3 재실행으로 자동 판정분은 복원되지만
+-- B-1(3) 목록으로 사람이 올린 검수분은 복원되지 않는다. 검수를 반영했다면 목록을 먼저 남긴다.
+-- ALTER TABLE exercise_body_part_detail DROP COLUMN contribution;
+```

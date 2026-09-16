@@ -1,4 +1,4 @@
-- user-exercise-session
+### user-exercise-session
 ```sql
 select *
   from user_exercise_session
@@ -7,4 +7,24 @@ select *
   limit 2;
 ```
 
+### user_exercise_session_history
+```sql
+select id, machine_id, round_number
+  from user_exercise_session_history
+    left join user_exercise_session ues
+      on ues.id = user_exercise_session_history.user_exercise_session_id
+    where user_id=51758
+  order by id desc
+  limit 2;
+```
+
+### user_exercise_session with machine 
+```sql
+select ues.*, e.name as exercise_name
+  from user_exercise_session ues
+    left join exercise e on ues.exercise_id = e.id
+    left join machine m on e.machine_id = m.id
+  where ues.user_id=51758
+  order by ues.id desc
+  limit 2;
 ```

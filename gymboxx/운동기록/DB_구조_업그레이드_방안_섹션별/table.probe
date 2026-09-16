@@ -5,6 +5,12 @@ select name, type, unit, has_weight, movement_pattern, status
   limit 10;
 select count(*) from exercise;
 ```
+### exercise equipment_type
+```sql
+select distinct equipment_type from exercise;
+select count(distinct equipment_type) from exercise;
+```
+
 ```sql
 describe exercise;
 ```

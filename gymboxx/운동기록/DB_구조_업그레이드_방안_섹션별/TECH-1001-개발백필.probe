@@ -1,0 +1,158 @@
+# TECH-1001 개발 DB 전용 백필 — `equipment_type` 잔여 208종
+
+개발 DB 는 컬럼이 이미 있고 `MACHINE` 갈래만 채워진 상태다. **DDL 없이 백필만** 돌린다.
+
+> `V4_33_3__exercise_equipment_type.sql` 을 파일째 실행하면 §2-(0) `ADD COLUMN` 이
+> "이미 존재" 로 실패하면서 그 아래 §3 백필까지 중단된다. 그래서 이 파일이 따로 있다.
+
+대상 — 개발 `db.gymboxx.dev.supp.kr` / `gymboxx` ([docs/ai/gymboxx.db.md](../../ai/gymboxx.db.md)).
+**SSL 필수**이고 PATH 의 `mysql` 은 MariaDB 클라이언트라 `--ssl-mode` 가 없다 —
+`/opt/homebrew/opt/mysql-client@8.2/bin/mysql --ssl-mode=REQUIRED` 를 쓴다.
+
+실행 순서 — §1 현황 → §2 백필 → §3 검증.
+
+## 1. 현황 (조회)
+
+```sql
+SELECT type, IFNULL(equipment_type, '(NULL)') AS eq, COUNT(*) AS cnt
+  FROM exercise
+ GROUP BY type, equipment_type
+ ORDER BY type, cnt DESC;
+```
+
+실행 전 개발 실측 (2026-09-16) — `MACHINE` 44 · `SMITH` 12 · `CARDIO` 11 · **`(NULL)` 208**.
+
+## 2. 백필 — 단일 UPDATE
+
+한 문장으로 끝낸다. 여러 문장으로 나누면 중간에서 끊길 때 어디까지 들어갔는지 알기 어렵다.
+
+**`equipment_type IS NULL` 가드가 있어 재실행이 안전하다.** 이미 채워진 `MACHINE`·`SMITH`·`CARDIO`
+67종은 건드리지 않는다.
+
+`WHERE` 절이 `CASE` 의 어느 가지에도 걸리지 않는 행을 애초에 제외하므로 `NULL` 로 덮일 일이 없다 —
+기구 미연결 머신 10종은 대상 밖으로 남는다.
+
+```sql
+UPDATE exercise
+   SET equipment_type = CASE
+         -- 단순 이관 — 구 type 이 그대로 대응되는 갈래
+         WHEN type = 'DUMBBELL' THEN 'DUMBBELL'
+         WHEN type = 'BARBELL'  THEN 'BARBELL'
+         WHEN type = 'CABLE'    THEN 'CABLE'
+         WHEN type = 'BODY'     THEN 'BODYWEIGHT'
+
+         -- MACHINE 해체 — 이미 적용됐지만 재실행 대비로 남긴다
+         WHEN type = 'MACHINE' AND unit = 'MINUTE'      THEN 'CARDIO'
+         WHEN type = 'MACHINE' AND name LIKE '%스미스%'  THEN 'SMITH'
+         WHEN type = 'MACHINE'                          THEN 'MACHINE'
+
+         -- PROP 42종 해체 — 부하가 어디서 오는가로 판정한다
+         --   1순위 외부 중량물 → 그 중량물 / 2순위 탄성체 → BAND
+         --   3순위 체중 + 없으면 성립 불가한 설비 → STRUCTURE
+         --   4순위 체중 + 휴대 소품 → PROP
+         -- '밴드 어시스티드' 2종은 밴드가 부하를 제거하는 보조용이라 2순위가 아니다.
+         -- 없으면 성립 불가한 설비(딥스바·철봉)가 판정을 결정해 STRUCTURE 다.
+         WHEN type = 'PROP' AND name LIKE '%케틀벨%' THEN 'KETTLEBELL'
+         WHEN type = 'PROP' AND name LIKE '%밴드%'
+                            AND name NOT LIKE '%어시스티드%' THEN 'BAND'
+         WHEN type = 'PROP' AND (name LIKE '%박스%'   OR name LIKE '%벤치%'
+                              OR name LIKE '%캡틴스%' OR name LIKE '%어시스티드%') THEN 'STRUCTURE'
+         WHEN type = 'PROP' AND (name LIKE '%짐볼%'   OR name LIKE '%보수 볼%')   THEN 'PROP'
+
+         -- PROP 검수 반영분 — 이름 규칙으로 잡히지 않는 14종
+         --   폼 롤링 7 · 스틱 2 는 휴대 보조 소품(4순위)이라 PROP 유지
+         --   나머지 5 는 벤치·철봉이 없으면 성립하지 않아 STRUCTURE
+         WHEN id IN (3, 4, 45, 139, 159, 160, 162, 169, 226) THEN 'PROP'
+         WHEN id IN (47, 126, 164, 172, 174)                 THEN 'STRUCTURE'
+       END
+ WHERE equipment_type IS NULL
+   AND (
+     type IN ('DUMBBELL', 'BARBELL', 'CABLE', 'BODY')
+     OR (type = 'MACHINE'
+         AND (unit = 'MINUTE'
+              OR name LIKE '%스미스%'
+              OR EXISTS (SELECT 1 FROM exercise_machine em
+                          WHERE em.exercise_id = exercise.id)))
+     OR type = 'PROP'
+     OR id IN (3, 4, 45, 47, 126, 139, 159, 160, 162, 164, 169, 172, 174, 226)
+   );
+```
+
+기대 — **198행 갱신**(208 − 기구 미연결 머신 10).
+
+## 3. 검증 (조회)
+
+```sql
+-- (1) 분포 — 개발 기대(275종)
+--     DUMBBELL 55 · MACHINE 44 · BODYWEIGHT 42 · BARBELL 32 · CABLE 27 ·
+--     STRUCTURE 15 · SMITH 12 · CARDIO 11 · PROP 11 · BAND 10 · KETTLEBELL 6 · (NULL) 10
+SELECT IFNULL(equipment_type, '(NULL)') AS eq, COUNT(*) AS cnt
+  FROM exercise
+ GROUP BY equipment_type
+ ORDER BY cnt DESC;
+```
+
+```sql
+-- (2) 남은 NULL — 10행 · 전부 type='MACHINE' 이고 연결기구 0 이어야 한다
+SELECT e.id, e.name, e.type, e.status,
+       (SELECT COUNT(*) FROM exercise_machine em WHERE em.exercise_id = e.id) AS 연결기구
+  FROM exercise e
+ WHERE e.equipment_type IS NULL
+ ORDER BY e.status, e.id;
+```
+
+```sql
+-- (3) PROP 42종 해체 결과 — STRUCTURE 15 · PROP 11 · BAND 10 · KETTLEBELL 6
+SELECT equipment_type, COUNT(*) AS cnt
+  FROM exercise
+ WHERE type = 'PROP'
+ GROUP BY equipment_type
+ ORDER BY cnt DESC;
+```
+
+```sql
+-- (4) 구 type × 신 equipment_type 대조 — MACHINE 행에만 (NULL) 이 남아야 한다
+SELECT type, IFNULL(equipment_type, '(NULL)') AS eq, COUNT(*) AS cnt
+  FROM exercise
+ GROUP BY type, equipment_type
+ ORDER BY type, cnt DESC;
+```
+
+```sql
+-- (5) CARDIO·SMITH 부여분이 기구 마스터와 어긋나지 않는지
+--     CARDIO 는 m.type 전건 'CARDIO' · SMITH 는 m.type_detail 전건 'SMITH' 여야 한다
+SELECT e.equipment_type, m.type, m.type_detail, COUNT(*) AS cnt
+  FROM exercise e
+  JOIN exercise_machine em ON em.exercise_id = e.id
+  JOIN machine m           ON m.id = em.machine_id
+ WHERE e.equipment_type IN ('CARDIO', 'SMITH')
+ GROUP BY e.equipment_type, m.type, m.type_detail
+ ORDER BY e.equipment_type, cnt DESC;
+```
+
+## 4. `contribution` — 개발은 적용 완료
+
+2026-09-16 적용됨. 확인만 한다.
+
+```sql
+-- 개발 기대: DIRECT 265 / ASSIST 244 (ACTIVE 509행)
+SELECT contribution, COUNT(*) AS cnt
+  FROM exercise_body_part_detail
+ WHERE status = 'ACTIVE'
+ GROUP BY contribution;
+```
+
+```sql
+-- DIRECT 가 하나도 없는 ACTIVE 운동 — 0행이어야 한다
+SELECT d.exercise_id, e.name
+  FROM exercise_body_part_detail d
+  JOIN exercise e ON e.id = d.exercise_id
+ WHERE d.status = 'ACTIVE'
+ GROUP BY d.exercise_id, e.name
+HAVING SUM(d.contribution = 'DIRECT') = 0;
+```
+
+## 5. 운영에는 이 파일을 쓰지 않는다
+
+운영은 단순 이관·PROP 재배치가 **이미 들어가 있고** `MACHINE` 77종만 비어 있다.
+운영 적용은 [TECH-1001-적용.probe](TECH-1001-적용.probe) §A 를 쓴다 — enum 11종 전환이 선행돼야 한다.

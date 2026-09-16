@@ -63,3 +63,38 @@ select distinct(equipment_type) from exercise;
 ```sql
 select distinct(type_detail) from machine;
 ```
+
+### exercise training_type = STRETCHING and body_part CHEST
+```sql
+select e.id, e.name, e.equipment_type, e.training_type
+  , bp.id, bp.part
+  from exercise e
+    left join exercise_body_part ebp on e.id = ebp.exercise_id
+    left join body_part bp on ebp.body_part_id = bp.id
+  where e.training_type = 'MOBILITY';
+    -- and bp.part = 'CHEST';
+```
+```sql
+SELECT
+  e.id,
+  e.name,
+  e.training_type,
+  GROUP_CONCAT(DISTINCT bp.part ORDER BY bp.part) AS body_parts
+FROM exercise e
+JOIN exercise_body_part ebp
+  ON ebp.exercise_id = e.id
+ AND ebp.status = 'ACTIVE'
+JOIN body_part bp
+  ON bp.id = ebp.body_part_id
+WHERE e.training_type = 'MOBILITY'
+  AND e.status = 'ACTIVE'
+  AND EXISTS (
+    SELECT 1
+    FROM exercise_body_part ebp2
+    JOIN body_part bp2 ON bp2.id = ebp2.body_part_id
+    WHERE ebp2.exercise_id = e.id
+      AND ebp2.status = 'ACTIVE'
+      AND bp2.part = 'CHEST'
+  )
+GROUP BY e.id, e.name, e.training_type;
+```

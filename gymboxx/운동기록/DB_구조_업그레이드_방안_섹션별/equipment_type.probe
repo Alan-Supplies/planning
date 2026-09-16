@@ -1,0 +1,468 @@
+# `exercise.equipment_type` 현황과 남은 결정
+
+> [본문 §05](05_장비_분류.md) · [05-부록 PROP 42종 재배치 판례](05_장비_분류_PROP42_재배치판례.probe) ·
+> [기구 분류 참조](../기구_분류_type_detail_참조.md) · [전체 목차](README.md)
+
+TECH-1001(장비 분류 12종 전환)의 **2026-09-16 실측 기준 현재 위치**와, 재개하려면 먼저 답해야 하는
+결정을 정리한 문서. 판례 문서(`05_장비_분류_PROP42_재배치판례.probe`)가 2026-09-04 기준이라 이후
+운영에 실제로 반영된 내용과 어긋나는 부분이 있어, 이 문서가 현재 상태의 정본이다.
+
+실측 기준 — 2026-09-16 · 운영 `db-ro` 리드 레플리카 / 개발 `db.gymboxx.dev.supp.kr`
+([docs/ai/gymboxx.db.md](../../ai/gymboxx.db.md))
+
+## 1. 한 줄 요약
+
+**PROP 42종 재배치는 운영에 반영 완료. 남은 것은 `MACHINE` 77종 전건이며, 그 진행을 막고 있는 것은
+작업량이 아니라 "`PIN`·`PLATE_LOADED`를 종목 컬럼에 둘 것인가" 라는 결정 하나다.**
+
+## 2. 현재 상태 — 실측
+
+### 2-1. 컬럼은 양쪽 DB에 다 있다
+
+|환경|컬럼|값|
+|---|---|---|
+|운영|있음|274종 중 **197종 채워짐 · NULL 77종**|
+|개발|있음|275종 **전건 NULL**|
+
+판례 문서 §7-4의 "`equipment_type` 은 운영에 아직 없다(2026-09-04 확인)" 는 그 이후 뒤집혔다.
+개발 백필은 별도 작업으로 남아 있다.
+
+### 2-2. 실제 배포된 enum 12종 — `_MACHINE` 접미가 없다
+
+```text
+PIN · PLATE_LOADED · SMITH · CARDIO · CABLE · BARBELL
+DUMBBELL · KETTLEBELL · BAND · STRUCTURE · BODYWEIGHT · PROP
+```
+
+판례 §7-2가 "확정" 으로 적은 `PIN_MACHINE`·`PLATE_MACHINE`·`CARDIO_MACHINE` 이 **아니다.**
+실제 값은 `machine.type` 과 문자열이 같은 쪽이다. 머지되지 않은 `V4_31_7`(아래 §5)과 운영에 올라간
+것이 서로 다른 버전이므로, 문서·코드에서 `_MACHINE` 표기를 쓰면 안 된다.
+
+### 2-3. 구 `type` × 신 `equipment_type` 대조 (운영)
+
+|구 `type`|신 `equipment_type`|종목 수|
+|---|---|---|
+|`BARBELL`|`BARBELL`|31|
+|`BODY`|`BODYWEIGHT`|41|
+|`CABLE`|`CABLE`|28|
+|`DUMBBELL`|`DUMBBELL`|55|
+|`PROP`|`STRUCTURE`|15|
+|`PROP`|`PROP`|11|
+|`PROP`|`BAND`|10|
+|`PROP`|`KETTLEBELL`|6|
+|**`MACHINE`**|**`(NULL)`**|**77**|
+
+- **PROP 42종 재배치는 판례 §3 배정대로 전건 반영 완료** — 15·10·6·11이 정확히 일치한다.
+  미작성이라던 검수 반영분(`V4_31_8`) 내용이 어떤 경로로든 이미 운영에 들어가 있다
+- **밴드 어시스티드 2종(129·130)은 `STRUCTURE` 로 확정** — 판례 §7-2의 "미해결 충돌 1건" 은 해소됐다
+- **`MACHINE` 77종은 통째로 NULL** — 자동 규칙 2·3·4(유산소·스미스·다수결)가 아예 돌지 않았다.
+  `PIN`·`PLATE_LOADED`·`SMITH`·`CARDIO` 네 값은 enum에만 있고 **사용 행 0건**이다
+- 종목 총계 274(판례 시점 273) · `CABLE` 28(판례 27) — 그 사이 케이블 종목 1개가 추가됐다
+
+### 2-4. 12종 / 11종 / 8종 — 헷갈리기 쉬운 세 숫자
+
+|숫자|정체|
+|---|---|
+|**12종**|운영 enum에 **정의된** 값 (§2-2)|
+|**8종**|그중 **실제 행이 붙어 있는** 값. 나머지 4종이 0건인 것은 `MACHINE` 이 통째로 NULL이기 때문|
+|**11종**|**A안이 제안하는 결과 형태** (§4) — 아직 결정되지 않은 미래안|
+
+## 3. `MACHINE` 77종에 자동 규칙을 재현하면
+
+운영 실측(2026-09-16) — 판례 §7-4 쿼리와 동일한 규칙.
+
+|판정|종목 수|
+|---|---|
+|`PIN`|18|
+|`PLATE_LOADED`|13|
+|`SMITH`|12|
+|`CARDIO`|11|
+|NULL — 핀/플레이트 혼재|**14**|
+|NULL — 미연결 `INACTIVE` (정상)|8|
+|NULL — 미연결 `ACTIVE` (171 인버티드 로우)|**1**|
+
+**자동 54종(핀 18 + 플레이트 13 + 스미스 12 + 유산소 11) · 사람 판단 15종.** 판례 예측과 일치한다.
+
+## 4. 핵심 결정 — `PIN`·`PLATE_LOADED` 를 합칠 것인가
+
+### 4-1. 이 제안은 원안이 아니다 — 출처와 경위
+
+**2026-08-21에 확정된 12종 원안에는 `MACHINE` 통합이 없다.** 원안은 핀 머신과 플레이트 머신을
+별도 값으로 둔다 ([본문 §05](05_장비_분류.md)).
+
+|시점|문서|통합안의 위치|
+|---|---|---|
+|2026-08-21|[본문 §05](05_장비_분류.md)|**없음** — 12종 원안 확정 (핀 머신·플레이트 머신 별도)|
+|—|[실행일정 §3-4(5)](../../../archive/운동기록데이터화/DB_구조_업그레이드_실행일정.md)|**B안(위임)으로 처음 등장 · 기각 권고.** 권고는 A(다수결 대표 표기)였고, 통합안은 "§5의 12종 목표를 포기하는 것이라 결정 권한이 이 문서 밖에 있다" 며 PO 검수 Q4로 올렸다|
+|2026-09-04|[판례 §8-3](05_장비_분류_PROP42_재배치판례.probe)|**A안(권고)으로 승격.** 운영 실측에서 "자동 부여된 31종 안에도 양쪽 연결이 17종" 이라는 사실이 나오면서 결론이 뒤집혔다|
+
+🔴 **두 문서에서 A/B 라벨이 서로 반대다.** 실행일정의 A(다수결) = 판례의 B, 실행일정의 B(통합) =
+판례의 A다. 이 문서는 **판례 쪽 라벨**을 쓴다 (§4-4).
+
+즉 통합은 처음부터 밀던 안이 아니라 **실측이 원안의 전제를 깨뜨려서 나중에 올라온 안**이며,
+아직 **PO 승인을 받지 않았다.** 실행일정이 검수 Q4로 올린 질문이 그대로 살아 있다.
+
+### 4-2. 왜 합치자는 말이 나왔는가
+
+핀/플레이트 대상 종목의 기구 연결 실태 (운영 실측 2026-09-16 · 유산소·스미스 제외):
+
+|판정|연결 형태|종목 수|
+|---|---|---|
+|자동 부여됨 (80% 이상)|**양쪽 연결**|**17**|
+|자동 부여됨 (80% 이상)|한쪽만|14|
+|혼재로 NULL (80% 미달)|**양쪽 연결**|**14**|
+|합계|—|45|
+
+**45종 중 31종(69%)이 핀 머신과 플레이트 머신 양쪽에 연결되어 있다.** 같은 운동을 지점에 따라
+핀 머신으로도 하고 플레이트 머신으로도 한다. 이것은 데이터 품질 문제가 아니라 현실이다.
+
+그리고 결정적으로 — **자동 부여된 31종 안에도 양쪽 연결이 17종 들어 있다.** NULL로 남은 14종과
+값이 들어간 17종은 성질이 똑같은데 80% 임계선 하나로 갈렸을 뿐이다.
+
+합치자는 이유는 네 가지다.
+
+**(1) 분류축 자체가 틀렸다.** 핀이냐 플레이트냐는 **종목의 속성이 아니라 기구의 속성**이다.
+`exercise` 1행당 단일 열거값으로는 "이 운동은 지점에 따라 둘 다" 를 표현할 수 없다.
+NULL 14종은 판정 불가한 예외가 아니라 **그 분류축의 반례**다.
+
+**(2) 채워 넣는 값이 사실이 아니다.** 다수결로 부여한 `PIN`·`PLATE_LOADED` 는 "대표 표기" 일 뿐이다.
+그 값으로 지점 가능 운동을 판정하면 **틀린 답이 나온다** — 핀 머신만 있는 지점에서 '플레이트' 로
+표기된 머신 풀다운이 불가능으로 판정된다. 마이그레이션 SQL 스스로 이 값을 판정에 쓰지 말라고
+못 박았고, 그 경고 범위는 실제로는 NULL 14종보다 넓다(자동 부여 17종도 같은 성질).
+
+**(3) 이 축을 요구하는 곳이 없다.**
+
+|후보 용도|실제|
+|---|---|
+|앱 필터 칩|요구는 "5칩 → 6칩(유산소 기구·도구 신설)" 이고 **핀/플레이트 구분은 없다.** 머신은 한 칩|
+|지점별 가능 운동 판정|`exercise_machine → machine → gym_machine` 경로가 정본이며 더 정확하다|
+|계산·집계|"머신 근력 운동" 조건은 유산소를 분리하면 충족된다. 더 나눌 이유가 없다|
+
+**(4) 필요할 때 읽을 곳이 이미 있다.** 핀/플레이트 구분이 정말 필요하면
+`machine.type_detail` 에서 기구 단위로 정확하게 읽으면 된다 — 대응표는
+[기구 분류 참조](../기구_분류_type_detail_참조.md) 에 있다. 종목 컬럼에 복제할 이유가 없다.
+
+### 4-3. 왜 `SMITH`·`CARDIO` 는 합치지 않는가
+
+같은 머신 계열인데 이 둘만 남기는 것은 **종목 단위로 깨끗하게 갈리기 때문**이다.
+
+|값|판정 근거|교차 검증|
+|---|---|---|
+|`CARDIO`|`unit = 'MINUTE'` 11종|연결 기구 **전건** `machine.type = 'CARDIO'` — 100% 일치|
+|`SMITH`|이름에 `스미스` 12종|연결 기구 **전건** `type_detail = 'SMITH'` — 100% 일치|
+
+독립적인 두 데이터 소스(단위·이름 / 기구 마스터)가 같은 답을 낸다. 핀/플레이트처럼 한 종목이 두
+값에 걸치는 사례가 0건이다. 즉 이 둘은 종목의 속성이 맞다.
+
+### 4-4. 세 가지 안
+
+|안|내용|NULL|사람 판단|비용|
+|---|---|---|---|---|
+|**A (권고)**|`PIN`·`PLATE_LOADED` 를 **`MACHINE` 하나로** → enum **11종**|**9건**(기구 미연결만)|**1종**(171)|enum 변경 + 백필 3문|
+|B|현행 유지 — 다수결 대표 표기 + NULL 인정|23건|15종|병행 종료 조건을 "검수 대상 0건" 으로 재정의해야 함|
+|C|혼재 종목을 핀/플레이트 두 종목으로 분리|0건|0종|31종 분리 + 기존 세션 기록 재매핑 — 비용 큼|
+
+```text
+현행 12종:  PIN · PLATE_LOADED · SMITH · CARDIO · CABLE · BARBELL
+            DUMBBELL · KETTLEBELL · BAND · STRUCTURE · BODYWEIGHT · PROP
+
+A안 11종:   MACHINE · SMITH · CARDIO · CABLE · BARBELL
+            DUMBBELL · KETTLEBELL · BAND · STRUCTURE · BODYWEIGHT · PROP
+```
+
+12 − 2 + 1 = 11. **`SMITH` 와 `CARDIO` 는 그대로 남고, 합쳐지는 것은 핀/플레이트 둘뿐이다.**
+
+A안 채택 시 `MACHINE` 77종의 귀결 (운영 실측으로 사전 검증함 · §8-1) —
+`MACHINE` **45**(핀 18 + 플레이트 13 + 혼재 14) · `SMITH` 12 · `CARDIO` 11 ·
+`NULL` **9**(기구 미연결 · `ACTIVE` 1 = id 171 인버티드 로우 + `INACTIVE` 8).
+
+사람 판단은 **171 한 건**으로 줄어든다(결정 2 · `STRUCTURE` 재분류 여부). 미연결 `INACTIVE` 8종은
+판례가 정상 NULL 로 규정한 것이므로 `NOT NULL` 전환은 그 8종 처리 방침이 따로 정해진 뒤의 일이다.
+
+`MACHINE` 은 `PROP` 같은 부정 정의("~외")가 아니라 **긍정 정의**(부하를 기구가 제공하며 궤도가 고정됨)
+이므로, §05가 없애려던 잔여 버킷 문제가 재발하지 않는다.
+
+### 4-5. A안에 대한 반론 — 검토는 했다
+
+현재 운영 enum 표기(`PIN`·`PLATE_LOADED`)가 `machine.type` 값과 문자열이 같아서 인벤토리와 직접
+조인이 된다. A안은 그것을 버린다.
+
+다만 §4-2(2)의 논지가 그대로 적용된다 — **그 조인은 애초에 하면 안 되는 조인이다.** 정본 경로는
+`exercise_machine → machine → gym_machine` 이고, 종목 컬럼의 다수결 값으로 지점을 판정하면 틀린다.
+문자열 일치는 실익이 아니라 **오용 유인**에 가깝다.
+
+### 4-6. 합친 값의 이름 — `MACHINE` 으로 확정
+
+**결론 — `MACHINE`.** 이름으로 구분을 만들려는 시도는 성립하지 않으며, 구분은 정의가 한다.
+
+#### 어느 축으로도 갈리지 않는다
+
+|값|궤도|부하 형태|접점|
+|---|---|---|---|
+|핀 머신|고정|스택|기구 전용 핸들·패드|
+|플레이트 머신|고정|원판|기구 전용 핸들·패드|
+|`SMITH`|**고정**|**원판**|바벨|
+|`CABLE`|자유|**스택**|어태치먼트|
+
+- "궤도 고정" 으로 가르면 → 스미스가 같이 들어온다
+- "원판/스택" 으로 가르면 → 핀과 플레이트가 서로 갈라진다
+- "중량" 으로 가르면 → 넷 다 들어온다
+
+단일 축이 없다. 핀·플레이트를 스미스와 가르는 것은 **접점(바벨이냐 기구 전용 핸들이냐)** 뿐이고,
+케이블과 가르는 것은 **궤도 자유도** 뿐이다 — 서로 다른 축 두 개를 써야 갈린다.
+따라서 `WEIGHT_MACHINE`·`STRENGTH_MACHINE`·`GUIDED_MACHINE` 어느 것도 구분을 만들지 못하며,
+특히 `WEIGHT_MACHINE` 은 "중량이라는 축으로 갈린다" 는 **거짓 약속**을 해서
+"스미스·케이블은 중량 머신이 아닌가" 라는 질문을 매번 유발한다. 그래서 기각한다.
+
+#### 이 enum 은 균등 분할이 아니다
+
+12종은 하나의 축을 균등하게 쪼갠 목록이 아니라 **판정에 쓸 수 있는 단위로 잘라낸 목록**이다.
+
+|값|잘라낸 근거|
+|---|---|
+|`SMITH`|이름 판정과 기구 마스터가 100% 교차 검증 · 종목 단위로 깨끗이 갈림|
+|`CABLE`|`machine.type = 'CABLES'` 로 정확히 갈리고 매핑 보유율 100%|
+|`CARDIO`|`unit = 'MINUTE'` 와 100% 일치|
+|**핀 / 플레이트**|**45종 중 31종이 양쪽에 걸침 — 잘라낼 수 없다**|
+
+즉 남는 값은 "스미스·케이블·유산소를 먼저 잘라낸 뒤의 머신" 이고, 그 관계를 이름 한 단어에 담을
+방법이 없다. 어떤 이름을 붙여도 정의를 읽지 않으면 구분되지 않는다.
+
+#### 규약에 못 박을 정의
+
+이름이 일을 못 하므로 정의가 대신한다.
+
+```text
+MACHINE = 부하와 궤도가 기구에 내장된 저항 머신 중,
+          SMITH(바벨 + 레일) · CABLE(궤도 자유) · CARDIO(시간 단위) 에
+          해당하지 않는 것.
+          핀/플레이트 구분이 필요하면 machine.type_detail 에서 읽는다.
+```
+
+#### 남는 두 부담과 그 처리
+
+|부담|처리|
+|---|---|
+|구 `type` 의 `MACHINE`(77종, 유산소·스미스 포함)과 문자열이 겹친다 — 신설 값은 45종|**병행 기간 한정 문제.** 구 `type` 은 제거 대상이고, 병행 규약이 "진실은 항상 한쪽" 이라 두 값을 함께 읽는 코드를 금지한다. 대조 검증 쿼리(§7)에서만 주의한다|
+|잔여 버킷으로 읽힌다|**인정하되 성질이 다르다.** `PROP` 의 "프리웨이트 외" 는 새 장비가 들어올 때마다 흡수되는 **열린 버킷**이었으나, `MACHINE` 은 스미스·케이블·유산소라는 **닫힌 예외 목록**을 뺀 나머지라 예외가 누적되지 않는다|
+
+## 5. 마이그레이션 파일 상태
+
+|파일|상태|
+|---|---|
+|`V4_31_7__exercise_equipment_type.sql`|`gymboxx-lib` 의 **로컬 브랜치 `feature/tech-1001/exercise-record-upgrade` 에만 존재** (커밋 `c5af2f7a`). 원격 미푸시·미머지|
+|원격 `feature/tech-1001/equipment-type-contribution`|**폐기된 이전 버전**(`b3f89b73` · 파일명 `V4_30_3__…` · `contribution` 컬럼 포함)을 가리킴. 정리 필요|
+|`V4_31_8__exercise_equipment_type_review.sql`|**어느 브랜치에도 없음.** 판례 §7-2의 그 이름은 파일이 아니라 제안이었다. 다만 내용(PROP 검수분)은 이미 운영에 반영됨(§2-3)|
+|`V4_31_6__exercise_body_part_detail_is_primary.sql`|같은 로컬 브랜치에만 존재 (커밋 `088c2e5d`). **설계가 `is_primary` 라 2026-09-16 환원 결정과 어긋난다**(§9-2) — `contribution` 으로 다시 쓰고 파일명도 맞춘다|
+
+`c5af2f7a` 가 `b3f89b73` 을 대체한 내용 — 번호를 `V4_30_3` → `V4_31_7` 로 재배치(V4_31_6 뒤),
+`exercise_body_part_detail.contribution` 제외(당시 `is_primary` 로 대체하는 결정 `9fc3cfac` 때문),
+`EXERCISE_CONTRIBUTION` enum 과 백필 SQL 도 함께 제외.
+
+🔴 **두 파일 모두 지금 그대로 쓸 수 없다.**
+
+- `V4_31_7` — enum 표기가 `_MACHINE` 접미가 붙은 **12종 구 버전**이라 운영(§2-2)과도, A안 11종(§4-4)과도 다르다
+- `V4_31_6` — `is_primary` 설계라 환원 결정(§9-2)과 어긋난다
+
+둘 다 [TECH-1001-적용.probe](TECH-1001-적용.probe) 기준으로 다시 쓴다 (§C-1).
+
+## 6. 남은 결정과 작업
+
+### 6-1. 결정
+
+|#|결정|상태|근거|
+|---|---|---|---|
+|1|**`PIN`·`PLATE_LOADED` 통합 여부 (A/B/C)**|**미결 — 나머지가 전부 여기 걸림 · PO 승인 필요**|§4|
+|1-1|A안 채택 시 합친 값의 이름|**`MACHINE` 으로 확정** (§4-6)|§4-6|
+|2|171 인버티드 로우|`MACHINE` 유지 vs `STRUCTURE` 재분류|판례 §7-2|
+|3|백 익스텐션(126) 종목 분리|구조물 버전과 핀 머신 버전이 한 종목에 묶여 있음|판례 §4-3|
+|4|`INACTIVE` 4종 폐기 여부|129 · 130 · 210 · 212|판례 §4-4|
+|5|병행 운영 규칙·종료 조건 승인|"진실은 항상 한쪽 / 쓰기는 양쪽 동시 / 읽기 전환은 한 번에"|판례 §8|
+
+해소된 항목 — 밴드 어시스티드 2종(129·130) 충돌, PROP 14종 검수 반영분, 12종 enum 영문 표기.
+
+### 6-2. 작업
+
+실행 쿼리는 [TECH-1001-적용.probe](TECH-1001-적용.probe) 에 있다.
+
+1. **enum 11종 전환 + `MACHINE` 77종 백필** — 적용 파일 §A. 개발 → 검증 → 운영 순서
+2. **`contribution` 신설 + 60% 백필** — 적용 파일 §B (§9)
+3. **`gymboxx-lib` 반영** — 적용 파일 §C-1. `V4_31_7`·`V4_31_6` 둘 다 다시 쓰고, 폐기 원격 브랜치 정리
+4. **구조물 12종의 `exercise_machine` 매핑 작성** — 이것만 하면 지점 판정 성립, 새 테이블 불필요 (판례 §6-1)
+5. **`machine` 값 오류 정정 4건** — `FREE_WEIGHTS` 4종 → `FREE_WEIGHT` · `type_detail` NULL 2종 → `PIN` ·
+   `CABLES` 1종 → `CABLE_STATION` · `SINGLE_PULLEY` 통합 검토 ([기구 분류 참조](../기구_분류_type_detail_참조.md))
+6. **구 `type` 제거** — 종료 조건 3개(NULL 0건 · 대조표 일치 · 참조 코드 0곳) 충족 후
+
+## 7. 재현 쿼리
+
+접속은 [docs/ai/gymboxx.db.md](../../ai/gymboxx.db.md) 의 읽기 전용 계정을 쓴다.
+개발은 SSL 필수 + MySQL 8 클라이언트(`/opt/homebrew/opt/mysql-client@8.2/bin/mysql --ssl-mode=REQUIRED`),
+운영은 `--ssl-mode=DISABLED`.
+
+```sql
+-- 컬럼 존재와 enum 정의 (§2-1 · §2-2)
+SELECT column_name, column_type, is_nullable
+  FROM information_schema.columns
+ WHERE table_schema = 'gymboxx' AND table_name = 'exercise'
+   AND column_name IN ('type', 'equipment_type');
+```
+
+```sql
+-- 값 분포 (§2-1)
+SELECT IFNULL(equipment_type, '(NULL)') AS eq, COUNT(*) AS cnt
+  FROM exercise
+ GROUP BY equipment_type
+ ORDER BY cnt DESC;
+```
+
+```sql
+-- 구 type × 신 equipment_type 대조 (§2-3)
+SELECT type, IFNULL(equipment_type, '(NULL)') AS eq, COUNT(*) AS cnt
+  FROM exercise
+ GROUP BY type, equipment_type
+ ORDER BY type, cnt DESC;
+```
+
+```sql
+-- MACHINE 77종 자동 규칙 재현 (§3)
+WITH maj AS (
+  SELECT em.exercise_id,
+         SUM(m.type = 'PIN')          / COUNT(*) AS pin_r,
+         SUM(m.type = 'PLATE_LOADED') / COUNT(*) AS plate_r,
+         COUNT(*)                               AS links
+    FROM exercise_machine em
+    JOIN machine m ON m.id = em.machine_id
+   GROUP BY em.exercise_id
+)
+SELECT CASE
+         WHEN e.unit = 'MINUTE'                              THEN 'CARDIO'
+         WHEN e.name LIKE '%스미스%'                          THEN 'SMITH'
+         WHEN IFNULL(maj.pin_r, 0)   >= 0.8                  THEN 'PIN'
+         WHEN IFNULL(maj.plate_r, 0) >= 0.8                  THEN 'PLATE_LOADED'
+         WHEN IFNULL(maj.links, 0) = 0 AND e.status = 'ACTIVE' THEN '(NULL) 미연결ACTIVE'
+         WHEN IFNULL(maj.links, 0) = 0                        THEN '(NULL) 미연결INACTIVE'
+         ELSE '(NULL) 핀/플레이트 혼재'
+       END      AS 판정,
+       COUNT(*) AS cnt
+  FROM exercise e
+  LEFT JOIN maj ON maj.exercise_id = e.id
+ WHERE e.type = 'MACHINE'
+ GROUP BY 1
+ ORDER BY cnt DESC;
+```
+
+```sql
+-- 핀/플레이트 양쪽 연결 실태 — A안의 근거 (§4-2)
+WITH maj AS (
+  SELECT em.exercise_id,
+         SUM(m.type = 'PIN')          / COUNT(*) AS pin_r,
+         SUM(m.type = 'PLATE_LOADED') / COUNT(*) AS plate_r,
+         SUM(m.type = 'PIN')                     AS pin_n,
+         SUM(m.type = 'PLATE_LOADED')            AS plate_n
+    FROM exercise_machine em
+    JOIN machine m ON m.id = em.machine_id
+   GROUP BY em.exercise_id
+)
+SELECT CASE WHEN maj.pin_r >= 0.8 OR maj.plate_r >= 0.8
+            THEN '자동부여됨(80%이상)' ELSE '혼재로 NULL' END AS 판정,
+       CASE WHEN maj.pin_n > 0 AND maj.plate_n > 0
+            THEN '양쪽 연결' ELSE '한쪽만' END                AS 연결형태,
+       COUNT(*) AS cnt
+  FROM exercise e
+  JOIN maj ON maj.exercise_id = e.id
+ WHERE e.type = 'MACHINE'
+   AND e.unit <> 'MINUTE'
+   AND e.name NOT LIKE '%스미스%'
+   AND (maj.pin_n > 0 OR maj.plate_n > 0)
+ GROUP BY 1, 2
+ ORDER BY 1, 2;
+```
+
+적용 쿼리(enum 변경 · 미매핑 백필)는 §8 에 있다.
+
+## 8. 적용 쿼리
+
+**[TECH-1001-적용.probe](TECH-1001-적용.probe) 로 옮겼다.** 실행용 최소 파일이며 배경 설명 없이
+점검 → 변경 → 백필 → 검증만 담는다.
+
+|절|내용|
+|---|---|
+|§A|`equipment_type` — enum 11종 `ALTER` · `MACHINE` 77종 백필 3문 · 검증 4문|
+|§B|`contribution` — 컬럼 추가 · 60% 백필 · 검증 4문 (§9)|
+|§C|DB 적용 후 남는 일 — `gymboxx-lib` 반영 · 소비측 · 미결 · 롤백|
+
+쿼리를 두 파일에 두면 한쪽만 고쳐져 갈라진다. **적용 쿼리의 정본은 그 파일 하나다.**
+이 문서는 왜 그렇게 하는지를 담는다.
+
+## 9. 곁가지 — 세부 부위 기여도(`contribution`)
+
+> **적용 쿼리는 [TECH-1001-적용.probe](TECH-1001-적용.probe) §B 에 있다.** 이 절은 설계 경위만 남긴다.
+
+`equipment_type` 과 주제는 다르지만 **같은 TECH-1001 이고 원래 한 커밋(`b3f89b73`)에 묶여 있다가
+갈라져 나온 작업**이라 여기 함께 둔다.
+
+### 9-1. 🔴 비슷한 축이 두 테이블에 있다 — 헷갈리는 지점
+
+|테이블|컬럼|뜻|종목당 개수|상태|
+|---|---|---|---|---|
+|`exercise_effect`|`is_primary`|**주 효과** (`STRENGTH`·`ENDURANCE`·…)|**정확히 1개**|이미 적용됨 (`V4_31_1`)|
+|`exercise_body_part_detail`|`contribution`|**부위 기여도** (`DIRECT`/`ASSIST`)|**`DIRECT` 여러 개 정상**|**미적용** — 적용 파일 §B|
+
+**이 절이 다루는 것은 `exercise_body_part_detail` 쪽이다.**
+
+🔴 **두 축은 개수 규칙이 반대다.** `exercise_effect` 는 종목당 주 효과 1개(운영 실측 `ACTIVE` 261행 ·
+주 효과 236행 · 236종 — 정확히 1:1)지만, 부위 쪽은 `DIRECT` 복수가 정상이다(1개 230종 · 2개 16종 ·
+3개 2종). 다관절 운동이 여러 근육을 동시에 주 타깃으로 쓰기 때문이다(바벨 데드리프트의 햄스트링·둔근).
+**`exercise_effect` 의 "주 1개" 검증을 부위 쪽에 복사하면 안 된다.**
+
+### 9-2. 설계 변천 — `contribution` → `is_primary` → `contribution`
+
+|시점|설계|
+|---|---|
+|2026-08-21|방안 문서 §06 — `contribution enum('DIRECT','ASSIST') NOT NULL`|
+|2026-09-04|`is_primary tinyint(1) default 0 not null` 로 **대체 확정** (커밋 `9fc3cfac` · `V4_31_6`)|
+|**2026-09-16**|**`contribution enum('DIRECT','ASSIST') NOT NULL DEFAULT 'ASSIST'` 로 환원 확정**|
+
+#### 환원한 이유
+
+2026-09-04 의 폐기 사유 3건을 다시 보면 **결정을 실제로 지탱하던 (나)가 사실이 아니다.**
+
+|#|2026-09-04 사유|2026-09-16 판정|
+|---|---|---|
+|가|enum 확장 시 lib 버전 + 소비 저장소 재빌드를 요구해 싸지 않다|**유효하나 약하다** — boolean 은 3단계로 늘릴 때 컬럼을 새로 만들어야 해서 오히려 더 비싸다|
+|나|enum `NOT NULL` 은 **기본값을 줄 수 없어** 기존 쓰기 경로의 INSERT 가 깨진다|🔴 **사실이 아니다.** MySQL enum 은 `NOT NULL` + `DEFAULT` 가 된다 (아래 실재 사례)|
+|다|"절대 기여도 척도 전환" 은 부위 21종 기준 운동 합의가 선행돼야 해 보류|**유효하나 무관** — 상대 판정이냐 절대 척도냐의 문제라 enum/boolean 어느 쪽을 골라도 그대로 성립|
+
+같은 DB(MySQL 8.0.45)에서 `NOT NULL` + `DEFAULT` 인 enum 컬럼 실측 (2026-09-16 · 일부):
+
+|테이블|컬럼|타입|DEFAULT|
+|---|---|---|---|
+|`exercise_effect`|`status`|`enum('ACTIVE','INACTIVE')` NOT NULL|`ACTIVE`|
+|`gym_acquisition_message`|`message_type`|`enum('SMS','LMS')` NOT NULL|`LMS`|
+|`survey_v2`|`status`|`enum('DRAFT','ACTIVE','ARCHIVED','INACTIVE')` NOT NULL|`DRAFT`|
+
+즉 `DEFAULT 'ASSIST'` 를 주면 `replaceBodyPartDetails` 는 그대로 돌아간다. 원래 SQL 이 `DEFAULT` 를
+안 적었을 뿐이고 enum 의 한계가 아니었다.
+
+(나)가 빠지면 남는 것은 "정보량이 같다" 는 대칭 논변뿐이고, 그렇다면 **이름이 더 정확한 쪽**이 남는다.
+`is_primary` 는 단수를 함의해 `DIRECT` 복수가 정상인 이 축과 맞지 않고, 하필 같은 스키마의
+`exercise_effect.is_primary`(종목당 1개)와 이름이 겹쳐 §9-1 같은 경고를 따로 달아야 했다.
+`DIRECT`/`ASSIST` 는 개수를 함의하지 않아 그 충돌이 아예 생기지 않는다.
+
+### 9-3. 유지되는 결정
+
+|항목|내용|
+|---|---|
+|`load_ratio`|**삭제하지 않고 원값으로 남긴다.** 합계 1.0 제약과 서버 검증(`isLoadRatioValid`)도 건드리지 않는다 — 판정을 `contribution` 이 맡으면 부하율은 참고값이 되고, 검증을 그대로 두면 소비측 변경이 0 이다|
+|백필 임계값|그 운동 `ACTIVE` 행의 `load_ratio` 최댓값 대비 **60% 이상이면 `DIRECT`**. 초기값 생성 규칙일 뿐이며 판정의 정본은 컬럼 값이다|
+|검수 범위|`DIRECT` 가 2개 이상 잡히는 **18종**. 60% 기준과 "최댓값만" 기준이 갈리는 전부가 그 목록 안에 있다|
+|절대 기여도 척도|**보류 유지** — 부위 21종의 기준 운동 합의가 선행돼야 한다|
+
+### 9-4. 이 작업 밖에 남는 일
+
+|#|내용|
+|---|---|
+|가|`gymboxx-headquarter-server` `replaceBodyPartDetails` 가 `contribution` 을 함께 쓰도록 수정 · "ACTIVE 행 중 `DIRECT` 최소 1개" 서버 검증 추가|
+|나|🔴 `gymboxx-app-server` `ExerciseRecommendationDAO.getAllActiveExercises` 의 `exercise_body_part_detail` relation 에 `status = 'ACTIVE'` 필터가 없다 — INACTIVE 이력 행이 보조근 점수에 섞인다. **`contribution` 과 무관하게 지금 틀린 값을 내는 실버그다**|
+|다|`SecondaryMuscleScorer` 는 이름과 달리 세부 부위 목록 전체를 쓴다. `contribution = 'ASSIST'` 만 보게 바꾸면 추천 점수 분포가 바뀌므로 회귀 검증을 붙여 별건으로 한다|
+|라|"주 1.0 / 보조 0.5" 같은 집계 가중치는 컬럼이 아니라 **코드 상수**로 둔다|
