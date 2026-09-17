@@ -1,0 +1,34 @@
+제품	2026-07 (USD)	2026-08 (USD)	증감액 (USD)	증감률	구분	주요 변동 요인 / 특이사항																			
+Amazon Relational Database Service	1639.22	3579.12	1939.9	118.30%	증가	8월 신규 발생한 RDS Extended Support(MySQL 8.0) $1,947.36 이 증가분 전부. 16,228 vCPU-hour x $0.120. 표준 지원 종료 버전을 계속 쓰는 데 붙는 가산 요금이며 인스턴스 요금과 별개. 인스턴스/스토리지 자체는 -$7 수준으로 오히려 소폭 감소(db.m6i.2xl Multi-AZ 372h->358.5h). MySQL 8.0 -> 8.4 이상 업그레이드 전까지 매월 반복 발생, 2년차부터 단가 인상 예정. 최우선 조치 대상.																			
+AWS Data Transfer	2733.56	2590.48	-143.08	-5.20%	감소	아웃바운드 총량 18,885GB -> 17,434GB(-7.7%)로 실사용이 줄었고, 10TB 초과분이 $0.126 -> $0.122 티어로 넘어가 단가도 하락. 다만 서울 -> 버지니아 전송이 3.3GB -> 799.6GB 로 급증해 +$64 발생 — 원인 규명 완료: 8/28 us-east-1 에 배포된 Datadog Agentless Scanner 가 서울 EBS 볼륨을 리전 간으로 매일 약 344GB 씩 읽어감. 전월 대비가 아닌 신규 상시 비용 (아래 별도 행 참조).																			
+Amazon Elastic Compute Cloud	1942.75	2251.28	308.54	15.90%	증가	m6i.xlarge 온디맨드 226h -> 1,431h(6.3배)로 Savings Plans 커버 범위를 벗어난 실질 비용 +$236. NAT Gateway 시간 3,180h -> 3,899h(게이트웨이 약 1개 증설) +$42, 신규 리전 NAT 데이터 처리 +$39, EBS gp3 1,003 -> 1,268 GB-월 +$24. t3.large 온디맨드는 858h -> 3,164h로 3.7배 늘었으나 Savings Plans 가 흡수해 실질 영향 없음. 표기 금액은 Savings Plans 상계(credit) 반영 후 순액.																			
+Savings Plans for AWS Compute usage	1554.96	1554.96	0	0.00%	동일	동일																			
+AmazonCloudWatch	871.73	1245.53	373.8	42.90%	증가	관측성 확대가 원인이며 네 갈래로 나뉨. 커스텀 로그 수집 389 -> 538GB(+$113), Application Signals 7.6M -> 81.6M 건(10.7배, +$111), Container Insights 등 옵저베이션 1.56B -> 1.95B(+$68), 커스텀 메트릭 304 -> 477 metric-월(+$52), Vended 로그 118 -> 153GB(+$26). X-Ray 트레이스 15배 증가와 같은 배경(APM/트레이싱 도입 확대)으로 보임. 로그 보존기간/샘플링 조정 여지 있음.																			
+Amazon CloudFront	613.73	599.9	-13.83	-2.30%	감소	아웃바운드 30,452GB -> 29,778GB, 요청 21.1M -> 19.8M 로 거의 동일. 티어 구간 이동에 따른 미세 감소로 특이사항 없음.																			
+Amazon Virtual Private Cloud	336.15	476.24	140.09	41.70%	증가	VPC Endpoint 시간 12,176h -> 23,330h 로 약 2배. 상시 엔드포인트가 16.4개 -> 31.4개로 늘어난 계산. 엔드포인트 신설 자체가 원인이며 데이터 처리량(29 -> 107GB)은 미미. Public IPv4 보유분은 34,768h -> 33,348h 로 소폭 감소.																			
+Elastic Load Balancing	341.12	438.91	97.79	28.70%	증가	ALB 시간 13,174h -> 17,960h(+4,786h, 상시 ALB 약 6.4개 증설분)가 +$108. 구형 Classic LB 는 744h -> 465h 로 감소해 -$7, NLB 도 소폭 감소. LCU 사용량은 오히려 줄어 트래픽 증가가 아닌 LB 개수 증가.																			
+Amazon Elastic Container Service for Kubernetes	666.1	324.66	-341.44	-51.30%	감소	7월에 있던 EKS Extended Support $350.24 가 8월 $0 으로 소멸. 클러스터 버전 업그레이드 완료로 판단. 클러스터 상시 수는 4.25개 -> 4.36개로 사실상 동일. 이번 달 최대 절감 항목.																			
+AWS Lambda	187.27	203.21	15.94	8.50%	증가	요청 수/컴퓨트 시간 증가에 따른 자연 증가. 절대 금액이 작아 조치 불요.																			
+AWS WAF	117.61	117.72	0.1	0.10%	증가	룰 수/요청 수 변동 없음. 사실상 동일.																			
+Amazon Kinesis	37.33	35.98	-1.36	-3.60%	감소	샤드/PUT 단위 소폭 감소. 특이사항 없음.																			
+AWS Secrets Manager	22.72	33.77	11.05	48.70%	증가	관리 시크릿 23.7개 -> 52.3개로 2.2배 증가(+$11). API 호출 수는 2.65M -> 2.56M 로 오히려 감소. 신규 서비스 배포에 따른 시크릿 등록 증가.																			
+AWS CodePipeline	22.25	30.4	8.15	36.60%	증가	활성 파이프라인 20개 -> 27개(+$7), 액션 실행 시간 1,126분 -> 1,702분(+$1). 신규 레포/배포 파이프라인 추가에 따른 증가.																			
+CodeBuild	22.36	20.77	-1.59	-7.10%	감소	빌드 시간 소폭 감소. 특이사항 없음.																			
+Amazon Simple Storage Service	17.66	19.63	1.97	11.20%	증가	저장 용량 및 요청 수 자연 증가. 조치 불요.																			
+Amazon EC2 Container Registry (ECR)	13.01	14.58	1.58	12.10%	증가	이미지 저장 용량 자연 증가. 조치 불요.																			
+AWS Database Migration Service	0	13.55	13.55	신규	신규	7월 $0 -> 8월 $13.55. dms.t3.small 242시간(약 10일치) 신규 가동. 일시적 데이터 마이그레이션 작업으로 보이며 종료 후 미사용 인스턴스 정리 필요.																			
+Amazon Simple Queue Service	13.53	12.06	-1.47	-10.90%	감소	요청 수 소폭 감소. 특이사항 없음.																			
+AWS X-Ray	0.77	11.6	10.82	1397.20%	증가	저장 트레이스 154,927건 -> 2,319,576건으로 약 15배. 분산 트레이싱을 신규 적용했거나 샘플링 비율을 올린 결과. 금액은 아직 작지만 CloudWatch Application Signals 증가와 동반 상승 중이라 증가 속도 관찰 필요.																			
+Amazon API Gateway	9.65	9.02	-0.62	-6.50%	감소	요청 수 소폭 감소. 특이사항 없음.																			
+Amazon Route 53	2.34	8.44	6.1	260.80%	증가	호스팅 영역 1개 -> 14개(+$6.50). 도메인/영역을 Route 53 으로 이관한 것으로 보이며 영역당 $0.50 고정비로 반복 발생.																			
+AWS Key Management Service	3.01	4.52	1.52	50.40%	증가	관리 키/요청 증가에 따른 소액 상승. 조치 불요.																			
+Amazon DynamoDB	3.55	2.99	-0.56	-15.70%	감소	읽기/쓰기 요청 단위 소폭 감소. 특이사항 없음.																			
+AWS Systems Manager	0.42	0.38	-0.03	-7.90%	감소	변동 미미.																			
+CloudWatch Events	0.2	0.2	0	0.90%	동일	변동 미미.																			
+AWS Cost Explorer	0	0.06	0.06	신규	신규	비용 분석 API 호출 신규 발생. 금액 무의미한 수준.																			
+AWS Payment Cryptography	0	0.01	0.01	신규	신규	신규 발생이나 $0.01 수준.																			
+기타 소액 서비스 (12종)	0	0	0	-	변동없음	프리티어 범위 내 사용으로 과금 $0.01 미만. 대상: AWS Certificate Manager, AWS CloudFormation, AWS CloudTrail, AWS Glue, AWS IoT, AWS Migration Hub Refactor Spaces, AWS Service Catalog, Amazon Athena, Amazon Elastic Container Registry Public, Amazon Location Service, Amazon Simple Notification Service, CloudFront Flat-Rate Plans																			
+Sale Discount	-422.38	-520.02	-97.63	23.10%	감소	리셀러 판매 할인. 총 사용액 증가에 비례해 할인액도 -$422 -> -$520 로 확대(할인율 약 3.9% 유지).																			
+																									
+총계	10750.61	13079.96	2329.35	21.70%	증가	전월 대비 +$2,329.35(+21.7%). 증가분의 83.6%가 RDS Extended Support(MySQL 8.0) 단일 항목. 이 항목을 제외하면 +$382(+3.6%) 수준. EKS Extended Support 소멸(-$350)이 일부를 상쇄. [주의] 8월 청구 데이터는 월 전체가 아니라 약 2026-08-30 21:00 UTC 까지만 반영됨 — 상시 가동 리소스의 사용 시간이 744h 가 아닌 717h(96.4%)로 집계됨. 실제 8월 확정 금액은 표기보다 3% 내외 높아질 수 있음.																			
+									
