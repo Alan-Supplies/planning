@@ -70,6 +70,9 @@ unask    # 끄기
 | 배지 표시 | `~/.claude/statusline-command.sh` |
 | `ask`/`unask` alias | `~/.zshrc` |
 
+실물 파일은 저장소의 [`ask-mode/`](./ask-mode/) 에 있고 `~/.claude` 로 심볼릭 링크돼 있다.
+**다른 머신에 깔려면** [`ask-mode/INSTALL.md`](./ask-mode/INSTALL.md) 를 본다.
+
 ## 안 될 때 확인하는 법
 
 ```sh

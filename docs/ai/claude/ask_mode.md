@@ -1,7 +1,11 @@
 # Claude Code "ask 모드" 구현 지시서
 
 > **쓰는 법만 필요하면 [`ask_mode-summary.md`](./ask_mode-summary.md) 를 본다.**
+> **다른 머신에 설치하려면 [`ask-mode/INSTALL.md`](./ask-mode/INSTALL.md).**
 > 이 문서는 구현 근거·실측 로그·설계 판단까지 담은 as-built 원문이다.
+>
+> 아래 코드 블록들은 설명을 위해 인라인으로 실었지만, **실물은 [`ask-mode/`](./ask-mode/) 에 있고**
+> `~/.claude` 로 심볼릭 링크된다. 고칠 때는 `ask-mode/` 쪽을 고친다.
 
 > **상태: 구현 완료 (2026-09-18).** 0단계 검증 결과 **A안 확정** — `permissions.allow` 는 건드리지 않았다.
 > 추가로 Bash 우회가 실측에서 뚫리는 것을 확인해 훅에 Bash 가드를 넣었다.
@@ -314,8 +318,8 @@ ask ON     ASK  Opus 5 | sl-test | ctx 12% $0.42 session 8%
 세션 밖에서 토글하거나 아예 ask 모드로 세션을 시작할 때 쓴다. 훅을 타지 않으므로 **항상 동작하는 탈출구**이기도 하다.
 
 ```bash
-alias ask='mkdir -p .claude && touch .claude/.ask && echo "ask ON"'
-alias unask='rm -f .claude/.ask && echo "ask OFF"'
+alias ask='mkdir -p .claude && touch .claude/.ask && echo "ask mode ON"'
+alias unask='rm -f .claude/.ask && echo "ask mode OFF"'
 ```
 
 `mkdir -p` 는 `.claude` 가 없는 디렉토리에서 `touch` 가 실패하는 것을 막는다.
