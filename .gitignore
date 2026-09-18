@@ -13,3 +13,6 @@ temp.sql
 
 # Claude Code ask 모드 센티널 (세션 cwd 기준이라 하위 디렉토리도 포함)
 **/.claude/.ask
+
+# Claude Code 세션 정리 산출물 (커밋하지 않음)
+local/
