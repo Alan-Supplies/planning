@@ -1,0 +1,17 @@
+-- 연령대별 테스트 회원 3명 (gymboxx_local, 2026-09-23)
+-- id 는 연령대와 맞춘다: 20 = 20대 여성, 50 = 50대 여성, 60 = 60대 남성.
+-- INSERT IGNORE 라 이미 같은 id·phone 이 있으면 건너뛴다. 여러 번 실행해도 된다.
+
+```sql
+SET NAMES utf8mb4;
+
+INSERT IGNORE INTO user (
+  id, name, nickname, phone, gender, status, birth_of_date,
+  is_identified, service_agreement, payment_agreement,
+  app_push_agreement, system_push_agreement,
+  personal_info_agreement, personal_info_agreed_at, transfer_status
+) VALUES
+  (20, '이지은', '지은20', '01000000020', 'FEMALE', 'ACTIVE', '2001-08-20', 1, 1, 1, 1, 1, 1, UTC_TIMESTAMP(), 'NONE'),
+  (50, '박영희', '영희50', '01000000050', 'FEMALE', 'ACTIVE', '1974-05-15', 1, 1, 1, 1, 1, 1, UTC_TIMESTAMP(), 'NONE'),
+  (60, '최민수', '민수60', '01000000060', 'MALE',   'ACTIVE', '1963-03-10', 1, 1, 1, 1, 1, 1, UTC_TIMESTAMP(), 'NONE');
+```

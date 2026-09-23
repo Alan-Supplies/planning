@@ -1,0 +1,10 @@
+### membership
+- describe
+```sql
+describe membership;
+```
+
+```sql
+select type, price, name from membership
+  where type = 'PASS';
+```

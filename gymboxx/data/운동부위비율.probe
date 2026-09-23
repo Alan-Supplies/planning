@@ -1,0 +1,569 @@
+# 주간 150분 이상 회원 · 스트레칭 기록 회원의 운동 부위 비율
+
+> 접속: 운영 `readonlyuser`(읽기 전용). 이 파일은 SELECT 전용이다.
+> 원천: `user_exercise_session` → `user_exercise_session_history` → `user_exercise_set_history`
+>
+> 계산 규칙
+> - **운동 시간** = 시간형 종목(`exercise.unit <> 'SET'`)의 세트 `count` 합(초 단위).
+>   운영엔 `duration_second` 가 없어서 `count` 를 초로 본다. 근력(SET) 세트는 시간이 없어 0초로 들어간다.
+> - **주** = KST 기준 ISO 주(월~일). `COALESCE(started_at, created_at)` 을 `+09:00` 으로 변환해 `YEARWEEK(...,3)`.
+> - **150분 이상** = 회원-주 단위로 9,000초 이상인 주. 같은 회원도 달성한 주의 운동만 들어간다.
+> - **수행 기록** = `is_deleted = 0` 세션의 `is_done = 1` 종목. (세트 `done_at` 은 운영에 값이 없어 쓰지 않는다)
+> - **부위** 두 가지를 나란히 본다.
+>   - 선택 부위: 세션 시작 시 회원이 고른 `user_exercise_session_body_part`
+>   - 수행 부위: 완료 종목의 `exercise_body_part`(ACTIVE). 한 종목이 여러 부위면 각 부위에 1씩 센다.
+> - **스트레칭 회원** = 기간 중 STRETCHING 부위 종목을 1건 이상 완료한 회원.
+> - 기간: 전체.
+
+## 0-3. 전제 확인 — 시간형 종목이 어느 부위에 매핑돼 있나
+
+```sql
+SELECT bp.part, e.unit, COUNT(DISTINCT e.id) AS exercises
+FROM exercise e
+JOIN exercise_body_part ebp ON ebp.exercise_id = e.id AND ebp.status = 'ACTIVE'
+JOIN body_part bp ON bp.id = ebp.body_part_id
+GROUP BY bp.part, e.unit
+ORDER BY bp.part, e.unit;
+```
+
+## 1. 모수 요약 — 회원-주 분포 (주간 시간 구간별)
+
+```sql
+WITH done_ex AS (
+  SELECT s.user_id,
+         YEARWEEK(CONVERT_TZ(COALESCE(s.started_at, s.created_at), '+00:00', '+09:00'), 3) AS yw,
+         h.id AS history_id, e.unit
+  FROM user_exercise_session s
+  JOIN user_exercise_session_history h ON h.user_exercise_session_id = s.id AND h.is_done = 1
+  JOIN exercise e ON e.id = h.exercise_id
+  WHERE s.is_deleted = 0
+),
+uw AS (
+  SELECT d.user_id, d.yw,
+         COALESCE(SUM(CASE WHEN d.unit <> 'SET' THEN st.count END), 0) AS sec
+  FROM done_ex d
+  LEFT JOIN user_exercise_set_history st ON st.user_exercise_session_history_id = d.history_id
+  GROUP BY d.user_id, d.yw
+)
+SELECT CASE WHEN sec = 0     THEN '0) 시간 기록 없음'
+            WHEN sec < 3600  THEN '1) ~60분'
+            WHEN sec < 9000  THEN '2) 60~150분'
+            WHEN sec < 18000 THEN '3) 150~300분'
+            ELSE                  '4) 300분+' END AS bucket,
+       COUNT(*)                 AS user_weeks,
+       COUNT(DISTINCT user_id)  AS users,
+       ROUND(AVG(sec) / 60, 1)  AS avg_min
+FROM uw
+GROUP BY bucket
+ORDER BY bucket;
+```
+
+## 2. [질문 1] 150분 이상 주 vs 미만 주 — 수행 부위 비율
+
+`ex_pct` = 완료 종목 수 기준, `set_pct` = 세트 수 기준. 두 구간을 나란히 비교한다.
+
+```sql
+WITH done_ex AS (
+  SELECT s.user_id,
+         YEARWEEK(CONVERT_TZ(COALESCE(s.started_at, s.created_at), '+00:00', '+09:00'), 3) AS yw,
+         h.id AS history_id, h.exercise_id, e.unit
+  FROM user_exercise_session s
+  JOIN user_exercise_session_history h ON h.user_exercise_session_id = s.id AND h.is_done = 1
+  JOIN exercise e ON e.id = h.exercise_id
+  WHERE s.is_deleted = 0
+),
+sets AS (
+  SELECT d.history_id, COUNT(st.id) AS set_cnt,
+         SUM(CASE WHEN d.unit <> 'SET' THEN st.count ELSE 0 END) AS sec
+  FROM done_ex d
+  LEFT JOIN user_exercise_set_history st ON st.user_exercise_session_history_id = d.history_id
+  GROUP BY d.history_id
+),
+uw AS (
+  SELECT d.user_id, d.yw, SUM(x.sec) AS sec
+  FROM done_ex d JOIN sets x ON x.history_id = d.history_id
+  GROUP BY d.user_id, d.yw
+),
+seg AS (
+  SELECT d.*, x.set_cnt, IF(uw.sec >= 9000, '150분 이상', '150분 미만') AS segment
+  FROM done_ex d
+  JOIN sets x ON x.history_id = d.history_id
+  JOIN uw ON uw.user_id = d.user_id AND uw.yw = d.yw
+)
+SELECT seg.segment, bp.part,
+       COUNT(*)                                                                      AS ex_cnt,
+       ROUND(100 * COUNT(*) / SUM(COUNT(*)) OVER (PARTITION BY seg.segment), 1)       AS ex_pct,
+       SUM(seg.set_cnt)                                                              AS set_cnt,
+       ROUND(100 * SUM(seg.set_cnt) / SUM(SUM(seg.set_cnt)) OVER (PARTITION BY seg.segment), 1) AS set_pct,
+       COUNT(DISTINCT seg.user_id)                                                   AS users
+FROM seg
+JOIN exercise_body_part ebp ON ebp.exercise_id = seg.exercise_id AND ebp.status = 'ACTIVE'
+JOIN body_part bp ON bp.id = ebp.body_part_id
+GROUP BY seg.segment, bp.part
+ORDER BY seg.segment, ex_cnt DESC;
+```
+
+## 3. [질문 1] 150분 이상 주 vs 미만 주 — 선택 부위 비율
+
+`sel_pct` = 선택 부위 건수 중 비중, `session_pct` = 그 부위를 고른 세션 비율(복수 선택이라 합이 100 을 넘는다).
+
+```sql
+WITH sess AS (
+  SELECT s.id AS session_id, s.user_id,
+         YEARWEEK(CONVERT_TZ(COALESCE(s.started_at, s.created_at), '+00:00', '+09:00'), 3) AS yw
+  FROM user_exercise_session s
+  WHERE s.is_deleted = 0
+),
+uw AS (
+  SELECT ss.user_id, ss.yw,
+         COALESCE(SUM(CASE WHEN e.unit <> 'SET' THEN st.count END), 0) AS sec
+  FROM sess ss
+  JOIN user_exercise_session_history h ON h.user_exercise_session_id = ss.session_id AND h.is_done = 1
+  JOIN exercise e ON e.id = h.exercise_id
+  LEFT JOIN user_exercise_set_history st ON st.user_exercise_session_history_id = h.id
+  GROUP BY ss.user_id, ss.yw
+),
+seg AS (
+  SELECT ss.*, IF(uw.sec >= 9000, '150분 이상', '150분 미만') AS segment
+  FROM sess ss
+  JOIN uw ON uw.user_id = ss.user_id AND uw.yw = ss.yw
+),
+seg_sessions AS (
+  SELECT segment, COUNT(*) AS n FROM seg GROUP BY segment
+)
+SELECT seg.segment, bp.part,
+       COUNT(*)                                                                AS sel_cnt,
+       ROUND(100 * COUNT(*) / SUM(COUNT(*)) OVER (PARTITION BY seg.segment), 1) AS sel_pct,
+       ROUND(100 * COUNT(DISTINCT seg.session_id) / MAX(n.n), 1)               AS session_pct,
+       COUNT(DISTINCT seg.user_id)                                             AS users
+FROM seg
+JOIN user_exercise_session_body_part sbp ON sbp.user_exercise_session_id = seg.session_id
+JOIN body_part bp ON bp.id = sbp.body_part_id
+JOIN seg_sessions n ON n.segment = seg.segment
+GROUP BY seg.segment, bp.part
+ORDER BY seg.segment, sel_cnt DESC;
+```
+
+## 4. [질문 2] 스트레칭 회원 vs 비스트레칭 회원 — 수행 부위 비율
+
+`pct_wo_stretch` = STRETCHING 을 빼고 다시 100 으로 맞춘 비율(근력·유산소 구성만 비교할 때).
+
+```sql
+WITH done_ex AS (
+  SELECT s.user_id, h.id AS history_id, h.exercise_id
+  FROM user_exercise_session s
+  JOIN user_exercise_session_history h ON h.user_exercise_session_id = s.id AND h.is_done = 1
+  WHERE s.is_deleted = 0
+),
+ex_part AS (
+  SELECT d.user_id, d.history_id, bp.part
+  FROM done_ex d
+  JOIN exercise_body_part ebp ON ebp.exercise_id = d.exercise_id AND ebp.status = 'ACTIVE'
+  JOIN body_part bp ON bp.id = ebp.body_part_id
+),
+stretch_users AS (
+  SELECT DISTINCT user_id FROM ex_part WHERE part = 'STRETCHING'
+)
+SELECT IF(su.user_id IS NULL, '스트레칭 안 함', '스트레칭 회원') AS segment, ep.part,
+       COUNT(*)                                                                         AS ex_cnt,
+       ROUND(100 * COUNT(*) / SUM(COUNT(*)) OVER (PARTITION BY su.user_id IS NULL), 1)   AS ex_pct,
+       ROUND(100 * IF(ep.part = 'STRETCHING', NULL, COUNT(*))
+             / SUM(IF(ep.part = 'STRETCHING', 0, COUNT(*))) OVER (PARTITION BY su.user_id IS NULL), 1) AS pct_wo_stretch,
+       COUNT(DISTINCT ep.user_id)                                                       AS users
+FROM ex_part ep
+LEFT JOIN stretch_users su ON su.user_id = ep.user_id
+GROUP BY segment, ep.part, su.user_id IS NULL
+ORDER BY segment, ex_cnt DESC;
+```
+
+## 5. [질문 2] 스트레칭 회원 vs 비스트레칭 회원 — 선택 부위 비율
+
+```sql
+WITH stretch_users AS (
+  SELECT DISTINCT s.user_id
+  FROM user_exercise_session s
+  JOIN user_exercise_session_history h ON h.user_exercise_session_id = s.id AND h.is_done = 1
+  JOIN exercise_body_part ebp ON ebp.exercise_id = h.exercise_id AND ebp.status = 'ACTIVE'
+  JOIN body_part bp ON bp.id = ebp.body_part_id AND bp.part = 'STRETCHING'
+  WHERE s.is_deleted = 0
+)
+SELECT IF(su.user_id IS NULL, '스트레칭 안 함', '스트레칭 회원') AS segment, bp.part,
+       COUNT(*)                                                                       AS sel_cnt,
+       ROUND(100 * COUNT(*) / SUM(COUNT(*)) OVER (PARTITION BY su.user_id IS NULL), 1) AS sel_pct,
+       COUNT(DISTINCT s.user_id)                                                      AS users
+FROM user_exercise_session s
+JOIN user_exercise_session_body_part sbp ON sbp.user_exercise_session_id = s.id
+JOIN body_part bp ON bp.id = sbp.body_part_id
+LEFT JOIN stretch_users su ON su.user_id = s.user_id
+WHERE s.is_deleted = 0
+GROUP BY segment, bp.part, su.user_id IS NULL
+ORDER BY segment, sel_cnt DESC;
+```
+
+# 디테일 분석
+
+## 6. 주간 시간 구간별 수행 부위 비율 (피벗, 종목 수 기준 %)
+
+150분 경계 전후로 부위 구성이 어떻게 바뀌는지 연속적으로 본다.
+
+```sql
+WITH done_ex AS (
+  SELECT s.user_id,
+         YEARWEEK(CONVERT_TZ(COALESCE(s.started_at, s.created_at), '+00:00', '+09:00'), 3) AS yw,
+         h.id AS history_id, h.exercise_id, e.unit
+  FROM user_exercise_session s
+  JOIN user_exercise_session_history h ON h.user_exercise_session_id = s.id AND h.is_done = 1
+  JOIN exercise e ON e.id = h.exercise_id
+  WHERE s.is_deleted = 0
+),
+uw AS (
+  SELECT d.user_id, d.yw,
+         COALESCE(SUM(CASE WHEN d.unit <> 'SET' THEN st.count END), 0) AS sec
+  FROM done_ex d
+  LEFT JOIN user_exercise_set_history st ON st.user_exercise_session_history_id = d.history_id
+  GROUP BY d.user_id, d.yw
+),
+ep AS (
+  SELECT CASE WHEN uw.sec = 0     THEN '0) 시간 기록 없음'
+              WHEN uw.sec < 3600  THEN '1) ~60분'
+              WHEN uw.sec < 9000  THEN '2) 60~150분'
+              WHEN uw.sec < 18000 THEN '3) 150~300분'
+              ELSE                     '4) 300분+' END AS bucket,
+         d.user_id, bp.part
+  FROM done_ex d
+  JOIN uw ON uw.user_id = d.user_id AND uw.yw = d.yw
+  JOIN exercise_body_part ebp ON ebp.exercise_id = d.exercise_id AND ebp.status = 'ACTIVE'
+  JOIN body_part bp ON bp.id = ebp.body_part_id
+)
+SELECT bucket,
+       COUNT(DISTINCT user_id) AS users,
+       COUNT(*)                AS n,
+       ROUND(100 * AVG(part = 'CHEST'), 1)      AS chest,
+       ROUND(100 * AVG(part = 'BACK'), 1)       AS back,
+       ROUND(100 * AVG(part = 'SHOULDER'), 1)   AS shoulder,
+       ROUND(100 * AVG(part = 'ARM'), 1)        AS arm,
+       ROUND(100 * AVG(part = 'LEG'), 1)        AS leg,
+       ROUND(100 * AVG(part = 'CORE'), 1)       AS core,
+       ROUND(100 * AVG(part = 'CARDIO'), 1)     AS cardio,
+       ROUND(100 * AVG(part = 'STRETCHING'), 1) AS stretching
+FROM ep
+GROUP BY bucket
+ORDER BY bucket;
+```
+
+## 7. 150분 이상 주 — 성별 · 연령대별 수행 부위 비율 (피벗)
+
+```sql
+WITH done_ex AS (
+  SELECT s.user_id,
+         YEARWEEK(CONVERT_TZ(COALESCE(s.started_at, s.created_at), '+00:00', '+09:00'), 3) AS yw,
+         h.id AS history_id, h.exercise_id, e.unit
+  FROM user_exercise_session s
+  JOIN user_exercise_session_history h ON h.user_exercise_session_id = s.id AND h.is_done = 1
+  JOIN exercise e ON e.id = h.exercise_id
+  WHERE s.is_deleted = 0
+),
+uw AS (
+  SELECT d.user_id, d.yw,
+         COALESCE(SUM(CASE WHEN d.unit <> 'SET' THEN st.count END), 0) AS sec
+  FROM done_ex d
+  LEFT JOIN user_exercise_set_history st ON st.user_exercise_session_history_id = d.history_id
+  GROUP BY d.user_id, d.yw
+  HAVING sec >= 9000
+),
+ep AS (
+  SELECT u.gender,
+         CASE WHEN u.birth_of_date IS NULL THEN '미상'
+              ELSE CONCAT(LEAST(FLOOR(TIMESTAMPDIFF(YEAR, u.birth_of_date, CURDATE()) / 10) * 10, 60), '대') END AS age_band,
+         d.user_id, bp.part
+  FROM done_ex d
+  JOIN uw ON uw.user_id = d.user_id AND uw.yw = d.yw
+  JOIN user u ON u.id = d.user_id
+  JOIN exercise_body_part ebp ON ebp.exercise_id = d.exercise_id AND ebp.status = 'ACTIVE'
+  JOIN body_part bp ON bp.id = ebp.body_part_id
+)
+SELECT gender, age_band,
+       COUNT(DISTINCT user_id) AS users,
+       COUNT(*)                AS n,
+       ROUND(100 * AVG(part = 'CHEST'), 1)      AS chest,
+       ROUND(100 * AVG(part = 'BACK'), 1)       AS back,
+       ROUND(100 * AVG(part = 'SHOULDER'), 1)   AS shoulder,
+       ROUND(100 * AVG(part = 'ARM'), 1)        AS arm,
+       ROUND(100 * AVG(part = 'LEG'), 1)        AS leg,
+       ROUND(100 * AVG(part = 'CORE'), 1)       AS core,
+       ROUND(100 * AVG(part = 'CARDIO'), 1)     AS cardio,
+       ROUND(100 * AVG(part = 'STRETCHING'), 1) AS stretching
+FROM ep
+GROUP BY gender, age_band
+ORDER BY gender, age_band;
+```
+
+## 8. 스트레칭 회원 — 성별 · 연령대별 수행 부위 비율 (피벗)
+
+```sql
+WITH ep AS (
+  SELECT s.user_id, bp.part
+  FROM user_exercise_session s
+  JOIN user_exercise_session_history h ON h.user_exercise_session_id = s.id AND h.is_done = 1
+  JOIN exercise_body_part ebp ON ebp.exercise_id = h.exercise_id AND ebp.status = 'ACTIVE'
+  JOIN body_part bp ON bp.id = ebp.body_part_id
+  WHERE s.is_deleted = 0
+),
+stretch_users AS (
+  SELECT DISTINCT user_id FROM ep WHERE part = 'STRETCHING'
+)
+SELECT u.gender,
+       CASE WHEN u.birth_of_date IS NULL THEN '미상'
+            ELSE CONCAT(LEAST(FLOOR(TIMESTAMPDIFF(YEAR, u.birth_of_date, CURDATE()) / 10) * 10, 60), '대') END AS age_band,
+       COUNT(DISTINCT ep.user_id) AS users,
+       COUNT(*)                   AS n,
+       ROUND(100 * AVG(part = 'CHEST'), 1)      AS chest,
+       ROUND(100 * AVG(part = 'BACK'), 1)       AS back,
+       ROUND(100 * AVG(part = 'SHOULDER'), 1)   AS shoulder,
+       ROUND(100 * AVG(part = 'ARM'), 1)        AS arm,
+       ROUND(100 * AVG(part = 'LEG'), 1)        AS leg,
+       ROUND(100 * AVG(part = 'CORE'), 1)       AS core,
+       ROUND(100 * AVG(part = 'CARDIO'), 1)     AS cardio,
+       ROUND(100 * AVG(part = 'STRETCHING'), 1) AS stretching
+FROM ep
+JOIN stretch_users su ON su.user_id = ep.user_id
+JOIN user u ON u.id = ep.user_id
+GROUP BY u.gender, age_band
+ORDER BY u.gender, age_band;
+```
+
+## 9. 세션 목적(purpose)별 — 150분 이상 주 / 스트레칭 회원 비중
+
+어떤 목적을 고른 회원이 150분을 넘기고 스트레칭을 하는지.
+
+```sql
+WITH done_ex AS (
+  SELECT s.id AS session_id, s.user_id, s.purpose,
+         YEARWEEK(CONVERT_TZ(COALESCE(s.started_at, s.created_at), '+00:00', '+09:00'), 3) AS yw,
+         h.id AS history_id, h.exercise_id, e.unit
+  FROM user_exercise_session s
+  JOIN user_exercise_session_history h ON h.user_exercise_session_id = s.id AND h.is_done = 1
+  JOIN exercise e ON e.id = h.exercise_id
+  WHERE s.is_deleted = 0
+),
+uw AS (
+  SELECT d.user_id, d.yw,
+         COALESCE(SUM(CASE WHEN d.unit <> 'SET' THEN st.count END), 0) AS sec
+  FROM done_ex d
+  LEFT JOIN user_exercise_set_history st ON st.user_exercise_session_history_id = d.history_id
+  GROUP BY d.user_id, d.yw
+),
+stretch_sessions AS (
+  SELECT DISTINCT d.session_id
+  FROM done_ex d
+  JOIN exercise_body_part ebp ON ebp.exercise_id = d.exercise_id AND ebp.status = 'ACTIVE'
+  JOIN body_part bp ON bp.id = ebp.body_part_id AND bp.part = 'STRETCHING'
+),
+sess AS (
+  SELECT DISTINCT d.session_id, d.user_id, d.purpose, uw.sec
+  FROM done_ex d JOIN uw ON uw.user_id = d.user_id AND uw.yw = d.yw
+)
+SELECT COALESCE(sess.purpose, '(미선택)')                              AS purpose,
+       COUNT(*)                                                       AS sessions,
+       COUNT(DISTINCT sess.user_id)                                   AS users,
+       ROUND(100 * AVG(sess.sec >= 9000), 1)                          AS pct_in_150_week,
+       ROUND(100 * AVG(ss.session_id IS NOT NULL), 1)                 AS pct_with_stretch
+FROM sess
+LEFT JOIN stretch_sessions ss ON ss.session_id = sess.session_id
+GROUP BY purpose
+ORDER BY sessions DESC;
+```
+
+## 10. 스트레칭 — 같은 세션에서 함께 한 부위 (동시 수행)
+
+스트레칭이 들어간 세션 중 각 부위가 함께 있었던 세션 비율. "하체 날 스트레칭" 같은 패턴 확인용.
+
+```sql
+WITH sp AS (
+  SELECT DISTINCT s.id AS session_id, bp.part
+  FROM user_exercise_session s
+  JOIN user_exercise_session_history h ON h.user_exercise_session_id = s.id AND h.is_done = 1
+  JOIN exercise_body_part ebp ON ebp.exercise_id = h.exercise_id AND ebp.status = 'ACTIVE'
+  JOIN body_part bp ON bp.id = ebp.body_part_id
+  WHERE s.is_deleted = 0
+),
+st AS (SELECT session_id FROM sp WHERE part = 'STRETCHING')
+SELECT sp.part,
+       COUNT(*)                                                    AS sessions,
+       ROUND(100 * COUNT(*) / (SELECT COUNT(*) FROM st), 1)        AS pct_of_stretch_sessions
+FROM sp JOIN st ON st.session_id = sp.session_id
+WHERE sp.part <> 'STRETCHING'
+GROUP BY sp.part
+UNION ALL
+SELECT '(스트레칭 단독 세션)',
+       COUNT(*),
+       ROUND(100 * COUNT(*) / (SELECT COUNT(*) FROM st), 1)
+FROM st
+WHERE NOT EXISTS (SELECT 1 FROM sp x WHERE x.session_id = st.session_id AND x.part <> 'STRETCHING')
+ORDER BY sessions DESC;
+```
+
+## 11. 스트레칭 빈도 구간별 수행 부위 비율 (회원의 전체 세션 중 스트레칭 세션 비율)
+
+가끔 하는 회원과 매번 하는 회원의 구성 차이.
+
+```sql
+WITH sp AS (
+  SELECT s.id AS session_id, s.user_id, bp.part
+  FROM user_exercise_session s
+  JOIN user_exercise_session_history h ON h.user_exercise_session_id = s.id AND h.is_done = 1
+  JOIN exercise_body_part ebp ON ebp.exercise_id = h.exercise_id AND ebp.status = 'ACTIVE'
+  JOIN body_part bp ON bp.id = ebp.body_part_id
+  WHERE s.is_deleted = 0
+),
+freq AS (
+  SELECT user_id,
+         COUNT(DISTINCT IF(part = 'STRETCHING', session_id, NULL)) / COUNT(DISTINCT session_id) AS r
+  FROM sp GROUP BY user_id
+  HAVING SUM(part = 'STRETCHING') > 0
+)
+SELECT CASE WHEN f.r < 0.25 THEN '1) 25% 미만'
+            WHEN f.r < 0.5  THEN '2) 25~50%'
+            WHEN f.r < 0.75 THEN '3) 50~75%'
+            ELSE                 '4) 75% 이상' END AS stretch_freq,
+       COUNT(DISTINCT sp.user_id) AS users,
+       COUNT(*)                   AS n,
+       ROUND(100 * AVG(part = 'CHEST'), 1)      AS chest,
+       ROUND(100 * AVG(part = 'BACK'), 1)       AS back,
+       ROUND(100 * AVG(part = 'SHOULDER'), 1)   AS shoulder,
+       ROUND(100 * AVG(part = 'ARM'), 1)        AS arm,
+       ROUND(100 * AVG(part = 'LEG'), 1)        AS leg,
+       ROUND(100 * AVG(part = 'CORE'), 1)       AS core,
+       ROUND(100 * AVG(part = 'CARDIO'), 1)     AS cardio,
+       ROUND(100 * AVG(part = 'STRETCHING'), 1) AS stretching
+FROM sp JOIN freq f ON f.user_id = sp.user_id
+GROUP BY stretch_freq
+ORDER BY stretch_freq;
+```
+
+## 12. 세부 부위(body_part_detail) 비율 — 150분 이상 주 / 스트레칭 회원 / 전체
+
+상위 부위 안에서 어떤 세부 근육을 주로 쓰는지. 종목이 여러 세부 부위에 걸치면 각각 1씩 센다.
+
+```sql
+WITH done_ex AS (
+  SELECT s.user_id,
+         YEARWEEK(CONVERT_TZ(COALESCE(s.started_at, s.created_at), '+00:00', '+09:00'), 3) AS yw,
+         h.id AS history_id, h.exercise_id, e.unit
+  FROM user_exercise_session s
+  JOIN user_exercise_session_history h ON h.user_exercise_session_id = s.id AND h.is_done = 1
+  JOIN exercise e ON e.id = h.exercise_id
+  WHERE s.is_deleted = 0
+),
+uw AS (
+  SELECT d.user_id, d.yw,
+         COALESCE(SUM(CASE WHEN d.unit <> 'SET' THEN st.count END), 0) AS sec
+  FROM done_ex d
+  LEFT JOIN user_exercise_set_history st ON st.user_exercise_session_history_id = d.history_id
+  GROUP BY d.user_id, d.yw
+),
+stretch_users AS (
+  SELECT DISTINCT d.user_id
+  FROM done_ex d
+  JOIN exercise_body_part ebp ON ebp.exercise_id = d.exercise_id AND ebp.status = 'ACTIVE'
+  JOIN body_part bp ON bp.id = ebp.body_part_id AND bp.part = 'STRETCHING'
+),
+dp AS (
+  SELECT d.user_id, uw.sec, bp.part, bpd.detail_part
+  FROM done_ex d
+  JOIN uw ON uw.user_id = d.user_id AND uw.yw = d.yw
+  JOIN exercise_body_part_detail ebpd ON ebpd.exercise_id = d.exercise_id AND ebpd.status = 'ACTIVE'
+  JOIN body_part_detail bpd ON bpd.id = ebpd.body_part_detail_id
+  JOIN body_part bp ON bp.id = bpd.body_part_id
+)
+SELECT dp.part, dp.detail_part,
+       ROUND(100 * SUM(dp.sec >= 9000)          / SUM(SUM(dp.sec >= 9000)) OVER (), 2)          AS pct_150,
+       ROUND(100 * SUM(su.user_id IS NOT NULL)  / SUM(SUM(su.user_id IS NOT NULL)) OVER (), 2)  AS pct_stretch_user,
+       ROUND(100 * COUNT(*)                     / SUM(COUNT(*)) OVER (), 2)                     AS pct_all
+FROM dp
+LEFT JOIN stretch_users su ON su.user_id = dp.user_id
+GROUP BY dp.part, dp.detail_part
+ORDER BY dp.part, pct_all DESC;
+```
+
+## 13. 상위 종목 Top 20 — 150분 이상 주 / 스트레칭 회원
+
+```sql
+WITH done_ex AS (
+  SELECT s.user_id,
+         YEARWEEK(CONVERT_TZ(COALESCE(s.started_at, s.created_at), '+00:00', '+09:00'), 3) AS yw,
+         h.id AS history_id, h.exercise_id, e.unit
+  FROM user_exercise_session s
+  JOIN user_exercise_session_history h ON h.user_exercise_session_id = s.id AND h.is_done = 1
+  JOIN exercise e ON e.id = h.exercise_id
+  WHERE s.is_deleted = 0
+),
+uw AS (
+  SELECT d.user_id, d.yw,
+         COALESCE(SUM(CASE WHEN d.unit <> 'SET' THEN st.count END), 0) AS sec
+  FROM done_ex d
+  LEFT JOIN user_exercise_set_history st ON st.user_exercise_session_history_id = d.history_id
+  GROUP BY d.user_id, d.yw
+),
+stretch_users AS (
+  SELECT DISTINCT d.user_id
+  FROM done_ex d
+  JOIN exercise_body_part ebp ON ebp.exercise_id = d.exercise_id AND ebp.status = 'ACTIVE'
+  JOIN body_part bp ON bp.id = ebp.body_part_id AND bp.part = 'STRETCHING'
+),
+tagged AS (
+  SELECT '150분 이상 주' AS segment, d.user_id, d.exercise_id
+  FROM done_ex d JOIN uw ON uw.user_id = d.user_id AND uw.yw = d.yw AND uw.sec >= 9000
+  UNION ALL
+  SELECT '스트레칭 회원', d.user_id, d.exercise_id
+  FROM done_ex d JOIN stretch_users su ON su.user_id = d.user_id
+),
+ranked AS (
+  SELECT segment, exercise_id, COUNT(*) AS cnt, COUNT(DISTINCT user_id) AS users,
+         ROW_NUMBER() OVER (PARTITION BY segment ORDER BY COUNT(*) DESC) AS rn,
+         ROUND(100 * COUNT(*) / SUM(COUNT(*)) OVER (PARTITION BY segment), 1) AS pct
+  FROM tagged GROUP BY segment, exercise_id
+)
+SELECT r.segment, r.rn, e.name, e.unit,
+       (SELECT GROUP_CONCAT(bp.part ORDER BY bp.id)
+          FROM exercise_body_part ebp JOIN body_part bp ON bp.id = ebp.body_part_id
+         WHERE ebp.exercise_id = e.id AND ebp.status = 'ACTIVE') AS parts,
+       r.cnt, r.pct, r.users
+FROM ranked r JOIN exercise e ON e.id = r.exercise_id
+WHERE r.rn <= 20
+ORDER BY r.segment, r.rn;
+```
+
+## 14. 교집합 — 150분 달성 회원 중 스트레칭 회원 비율
+
+```sql
+WITH done_ex AS (
+  SELECT s.user_id,
+         YEARWEEK(CONVERT_TZ(COALESCE(s.started_at, s.created_at), '+00:00', '+09:00'), 3) AS yw,
+         h.id AS history_id, h.exercise_id, e.unit
+  FROM user_exercise_session s
+  JOIN user_exercise_session_history h ON h.user_exercise_session_id = s.id AND h.is_done = 1
+  JOIN exercise e ON e.id = h.exercise_id
+  WHERE s.is_deleted = 0
+),
+uw AS (
+  SELECT d.user_id, d.yw,
+         COALESCE(SUM(CASE WHEN d.unit <> 'SET' THEN st.count END), 0) AS sec
+  FROM done_ex d
+  LEFT JOIN user_exercise_set_history st ON st.user_exercise_session_history_id = d.history_id
+  GROUP BY d.user_id, d.yw
+),
+u150 AS (SELECT DISTINCT user_id FROM uw WHERE sec >= 9000),
+ust AS (
+  SELECT DISTINCT d.user_id
+  FROM done_ex d
+  JOIN exercise_body_part ebp ON ebp.exercise_id = d.exercise_id AND ebp.status = 'ACTIVE'
+  JOIN body_part bp ON bp.id = ebp.body_part_id AND bp.part = 'STRETCHING'
+),
+alls AS (SELECT DISTINCT user_id FROM done_ex)
+SELECT COUNT(*)                                             AS all_users,
+       SUM(a.user_id IN (SELECT user_id FROM u150))         AS users_150,
+       SUM(a.user_id IN (SELECT user_id FROM ust))          AS users_stretch,
+       SUM(a.user_id IN (SELECT user_id FROM u150) AND a.user_id IN (SELECT user_id FROM ust)) AS users_both
+FROM alls a;
+```
