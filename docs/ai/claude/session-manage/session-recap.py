@@ -104,17 +104,22 @@ def project_slug(path: str) -> str:
     return os.path.abspath(path).replace("/", "-")
 
 
-def resolve_transcripts_dir(payload: dict[str, Any], cwd: str) -> Path | None:
+def resolve_transcripts_dirs(payload: dict[str, Any], cwd: str) -> list[Path]:
+    """transcript_path 의 부모와 cwd slug 디렉터리를 둘 다 본다.
+
+    둘이 다를 수 있다(리줌·워크트리·새 탭). 한쪽만 보면 목록이 비어
+    기존 파일을 덮어쓰게 되므로 후보를 모두 모아 합친다.
+    """
+    dirs: list[Path] = []
     transcript = payload.get("transcript_path")
     if isinstance(transcript, str) and transcript:
         parent = Path(transcript).expanduser().parent
         if parent.is_dir():
-            return parent
-    slug = project_slug(cwd)
-    candidate = PROJECTS_DIR / slug
-    if candidate.is_dir():
-        return candidate
-    return None
+            dirs.append(parent)
+    candidate = PROJECTS_DIR / project_slug(cwd)
+    if candidate.is_dir() and candidate not in dirs:
+        dirs.append(candidate)
+    return dirs
 
 
 def pid_alive(pid: int) -> bool:
@@ -166,7 +171,10 @@ def recap_paths(project_dir: Path, transcripts_dir: Path) -> list[Path]:
     return paths
 
 
-def parse_session(path: Path) -> dict[str, Any] | None:
+READ_ERROR = object()
+
+
+def parse_session(path: Path) -> Any:
     sid = path.stem
     title = ""
     branch = ""
@@ -219,7 +227,7 @@ def parse_session(path: Path) -> dict[str, Any] | None:
                     if text:
                         last_assistant = text
     except OSError:
-        return None
+        return READ_ERROR
 
     if not users:
         return None
@@ -328,18 +336,35 @@ def render(project_name: str, sessions: list[dict[str, Any]]) -> str:
     return "\n".join(lines) + "\n"
 
 
-def collect(transcripts_dir: Path, live: set[str]) -> list[dict[str, Any]]:
-    sessions: list[dict[str, Any]] = []
-    for path in transcripts_dir.glob("*.jsonl"):
-        parsed = parse_session(path)
-        if not parsed:
-            continue
-        status, evidence = classify(parsed, live)
-        parsed["status"] = status
-        parsed["evidence"] = evidence
-        sessions.append(parsed)
-    sessions.sort(key=lambda item: item["last_ts"] or item["mtime"], reverse=True)
-    return sessions
+def collect(
+    transcripts_dirs: list[Path], live: set[str]
+) -> tuple[list[dict[str, Any]], int, int]:
+    """(세션 목록, 훑은 jsonl 수, 읽기 실패 수)."""
+    by_id: dict[str, dict[str, Any]] = {}
+    scanned = 0
+    failed = 0
+    for transcripts_dir in transcripts_dirs:
+        for path in transcripts_dir.glob("*.jsonl"):
+            scanned += 1
+            parsed = parse_session(path)
+            if parsed is READ_ERROR:
+                failed += 1
+                continue
+            if not parsed:
+                continue
+            status, evidence = classify(parsed, live)
+            parsed["status"] = status
+            parsed["evidence"] = evidence
+            prev = by_id.get(parsed["id"])
+            if prev and (prev["last_ts"] or prev["mtime"]) >= (
+                parsed["last_ts"] or parsed["mtime"]
+            ):
+                continue
+            by_id[parsed["id"]] = parsed
+    sessions = sorted(
+        by_id.values(), key=lambda item: item["last_ts"] or item["mtime"], reverse=True
+    )
+    return sessions, scanned, failed
 
 
 def write_recap(paths: list[Path], markdown: str) -> list[Path]:
@@ -392,8 +417,8 @@ def main() -> None:
     payload = read_payload()
     cwd = resolve_cwd(payload)
     project_dir = Path(cwd)
-    transcripts_dir = resolve_transcripts_dir(payload, cwd)
-    if transcripts_dir is None:
+    transcripts_dirs = resolve_transcripts_dirs(payload, cwd)
+    if not transcripts_dirs:
         if mode in {"start", "stop", "end"}:
             emit_json({"continue": True, "suppressOutput": True})
         else:
@@ -401,14 +426,32 @@ def main() -> None:
         return
 
     live = live_session_ids()
-    sessions = collect(transcripts_dir, live)
+    sessions, scanned, failed = collect(transcripts_dirs, live)
     markdown = render(project_dir.name, sessions)
-    paths = recap_paths(project_dir, transcripts_dir)
-    written = write_recap(paths, markdown)
-    recap_file = str((written or paths)[0])
+    # session-recap.md 는 cwd slug 디렉터리가 정본이다. 없을 때만 다른 후보를 쓴다.
+    slug_dir = PROJECTS_DIR / project_slug(cwd)
+    paths = recap_paths(
+        project_dir, slug_dir if slug_dir in transcripts_dirs else transcripts_dirs[0]
+    )
+
+    # 목록이 비었거나 읽기 실패가 성공보다 많은 회차는 신뢰할 수 없다.
+    # 이럴 때 덮어쓰면 기존 기록이 "기록된 세션이 없다" 한 줄로 초기화된다.
+    trustworthy = bool(sessions) and failed < len(sessions)
+    existing = [path for path in paths if path.exists()]
+    if trustworthy or not existing:
+        written = write_recap(paths, markdown)
+    else:
+        written = []
+        sys.stderr.write(
+            f"session-recap: keep existing recap "
+            f"(sessions={len(sessions)} scanned={scanned} unreadable={failed})\n"
+        )
+    recap_file = str((written or existing or paths)[0])
 
     if mode == "print":
         sys.stdout.write(markdown)
+        if not trustworthy and existing:
+            sys.stdout.write("\n(신뢰할 수 없는 회차라 파일은 그대로 두었다.)\n")
         sys.stdout.write(f"\n파일: {recap_file}\n")
         return
 
