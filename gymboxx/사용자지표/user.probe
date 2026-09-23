@@ -1,0 +1,8 @@
+### 목표
+```sql
+select count(purpose) as purpose_count, purpose
+  from user_exercise_metadata
+  group by purpose
+```;
+
+feature/mission-generation-v2입니다
