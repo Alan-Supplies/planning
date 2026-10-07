@@ -16,3 +16,7 @@ temp.sql
 
 # Claude Code 세션 정리 산출물 (커밋하지 않음)
 local/
+
+# Python 바이트코드 — docs/ai/claude/open-sessions 스크립트 실행 시 생긴다
+__pycache__/
+*.pyc
