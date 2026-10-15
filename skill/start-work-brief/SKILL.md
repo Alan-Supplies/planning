@@ -1,66 +1,46 @@
 ---
 name: start-work-brief
-description: Update the current branch from its configured upstream, then brief the user on today's work by combining the repository's important-issues control board with today's daily note. Ask what happened to missing recent work and how stale unresolved work should be handled before carrying it forward. Use when the user says “오늘 업무 시작”, “업무 시작하자”, asks what to work on today, or needs help reloading and correcting their work context before starting.
+description: Start today's work with a concise, Linear-led view of major workstreams classified as ahead of plan, on track, or delayed/at risk. Reconcile the repository's control board and daily notes, then identify one outcome to finish today. Use when the user says “오늘 할 일 시작”, “오늘 업무 시작”, “업무 시작하자”, or asks what to work on today.
 ---
 
 # Start Work Brief
 
-Restore the user's work context with a short, conversational briefing. Optimize for orientation and initiation, not exhaustive status reporting.
+Give the user a quick sense of whether their important work is moving well. Lead with the three-way assessment of workstreams or milestones, then choose today's one essential outcome. Individual issue details support the judgment; they are not the main briefing.
 
-## Workflow
+## Sources and startup
 
-1. Before reading planning files, inspect the current branch and its configured upstream, then run `git pull --ff-only`. The startup request authorizes this pull. Do not switch branches, stash or discard changes, create commits, merge, rebase, or resolve conflicts automatically. If no upstream is configured or the pull fails because of local changes, divergence, authentication, network access, or any other reason, report the exact issue and stop before producing a potentially stale briefing.
-2. Determine today's date in the user's local timezone and format it as `YYMMDD`.
-3. Read `plan/중요이슈결정및계획.md`.
-4. Read the most recent previous daily note, normally yesterday's `daily/YYMMDD.md`.
-5. Read today's `daily/YYMMDD.md` if it exists.
-6. Check whether the previous daily note records what actually happened. Treat the record as incomplete when planned work has no outcome and the `완료 및 결과` or `종료 점검` section is empty or still contains template placeholders. Do not infer completion from plans, unchecked boxes, or uncommitted files.
-7. Reconcile the documents:
-   - Treat the important-issues document as the source of priority and overall direction.
-   - Treat today's daily note as the source of today's commitment, current progress, and immediate execution details.
-   - Call out a meaningful mismatch briefly instead of silently choosing one.
-8. Follow links only when the documents do not reveal the current position or the next concrete action.
-9. Check whether another recent work change may be missing. Treat any of these as a signal, not proof:
-   - Today's note is missing, empty, or only repeats an older plan.
-   - A task's stated next action appears overdue without a result or status update.
-   - The documents disagree about completion, ownership, priority, or the next action.
-   - The latest recorded progress leaves an obvious gap between what was planned and what should happen today.
-10. Review unresolved items in the control board and recent daily notes for stale work. Consider an item stale when its planned date or next action has passed and newer records provide no substantive result, status, or dependency update. Do not treat age alone as proof that the work should continue, and do not silently carry forward or drop a stale item.
-11. Build one concise checkpoint covering the missing previous-day result and the material stale items. Name each task and its last recorded state. For stale work, ask what actually happened and request one concrete disposition: continue with a next action, replan to a stated date or trigger, wait on a named dependency, or stop/archive with a reason. Include at most the three stale items most likely to affect current priorities, and group the rest as a count for later review.
-12. If the missing result or stale-work decision could materially alter today's priority, ask the checkpoint and wait before creating or finalizing today's note. Do not split it into serial questions.
-13. After the user answers, make the smallest accurate updates to the relevant daily notes and control board:
-   - Mark an item complete only when the user confirms its verifiable completion condition was met.
-   - Record actual completed work separately from incomplete work.
-   - Record the chosen disposition as `완료`, `재계획`, `대기`, or `중단`, with its reason and next action, date, or trigger.
-   - Preserve history and do not rewrite unrelated entries.
-14. Use the corrected state when creating or updating today's note and briefing. If the user reports no progress, record that fact and carry forward only a concrete next action rather than copying the whole plan blindly.
-15. If the gap is minor or the available evidence is sufficient, give a provisional briefing and put one concise confirmation question at the end instead of blocking progress.
-16. Give the briefing in Korean unless the user is speaking another language.
+1. Use the user's local date. In this repository, the control board is `roadmap/중요이슈결정및계획.md`; recent daily notes are normally `daily/YYMM/YYMMDD.md`, with older notes sometimes directly under `daily/`. Find the latest note by date rather than assuming yesterday has one.
+2. Inspect the current branch and configured upstream and attempt `git pull --ff-only` before relying on repository notes. The startup request authorizes this pull. Do not switch branches, stash, discard, commit, merge, rebase, or resolve conflicts. If the pull fails, state why and treat local notes as potentially stale; continue with live Linear when available.
+3. Use the user's explicit priority as the starting point. Read the control board and recent daily outcome for intended priorities, promises, and dependencies. Read today's note if present.
+4. Check current Linear projects, milestones, and the few linked issues needed to judge those priorities. Linear is the primary source for ownership, dates, status, scope, and recent decisions. Use PRs, workflow results, package versions, or other delivery evidence when a Linear status alone cannot establish whether a milestone gate passed. Keep the source and time of a judgment clear.
+5. If Linear cannot be reached, tell the user and ask for the missing workstream progress. Give a clearly provisional view from available notes while waiting. Do not infer that no work happened merely because a local note or Linear status is old.
 
-## Catch-up Questions
+## Classify the work, not the ticket list
 
-- Ask only about the missing recent result and up to three stale items most likely to affect today's priority or first action.
-- Prefer questions grounded in the last recorded state, for example: “결제 오류 PR은 어제 리뷰 대기였는데, 지금은 머지 완료·수정 중·계속 대기 중 어디에 가까운가요?”
-- For stale work, ask for both the outcome since the last record and its disposition, for example: “Bronze Athena 검증은 8/24 이후 결과가 없는데, 진행된 내용이 있나요? 앞으로는 계속 진행·날짜를 정해 재계획·의존성 대기·중단 중 어떻게 처리할까요?”
-- Distinguish the user's answer from repository-confirmed facts when they conflict.
-- Use the answer immediately to update the affected daily note or control-board entry and finish today's briefing.
+Group related issues into no more than a few meaningful workstreams or milestones. Compare each with its planned gate and date, the dependency order, and evidence of completed work. Classify each workstream under one of these headings:
 
-## Briefing Shape
+- **예상보다 잘 진행:** a verifiable milestone result or useful downstream validation arrived earlier than planned. A low Linear percentage by itself is not evidence of being ahead.
+- **정상진행중:** the next gate has a credible path to its target date, with active implementation or verification and no unresolved blocker that makes the date implausible.
+- **늦어지거나 진행 안 됨:** a target has passed, planned dates conflict with remaining work, a critical gate is blocked, or expected work has no meaningful progress. Say `지연 확정` or `위험 신호` explicitly; a future phase intentionally waiting on a prerequisite is not automatically late.
 
-Keep the response compact and conversational. Include:
+Use one short row per material workstream, not one row per issue. If a category has no supported item, say `현재 없음`. Treat progress percentages as context only: newly added issues can lower the percentage while implementation advances. Check the actual finish gate. A final integration or release PR that depends on several tasks belongs **after** those tasks; do not recommend it as the immediate next action.
 
-- **오늘의 한 가지:** the single outcome that matters most today.
-- **현재 위치:** the latest meaningful progress or dependency.
-- **첫 행동:** one concrete action the user can start immediately.
-- **놓치면 안 될 것:** at most one time-sensitive follow-up, risk, or pending decision.
+For each row, give the evidence in plain language and the next gate or decision date. Link to the relevant Linear project or issue. Keep detailed issue and PR lists out of the briefing unless a specific blocker cannot be understood without them.
 
-End with one small, action-oriented question that helps the user begin, such as whether to inspect a named PR or open the next working document. If a minor catch-up confirmation is still needed, use that as the ending question. Do not present a large menu of choices.
+## Choose today's work and reconcile records
 
-## Guardrails
+After the three-way view, state **오늘 반드시 끝낼 1개** with a verifiable completion condition and one first action. Select it from the user's priority and the most consequential next gate, not merely the nearest due date or a low-priority ticket. Mention at most one other time-sensitive dependency.
 
-- Prefer 4–8 short lines; avoid reproducing the full task list.
-- Lead with the primary outcome, not document-reading details.
-- Distinguish confirmed facts from suggestions.
-- Do not mark tasks complete without explicit confirmation, merge changes, delete data, or perform unrelated work. The startup request authorizes only the closeout and stale-item status corrections plus today's daily-note creation or update described above.
-- If today's daily file is missing, say so briefly, derive a provisional briefing from the control board, and offer to create the daily note.
-- If both files are missing, report the missing paths and ask where the planning sources are.
+Check whether the last daily note distinguishes actual results from unfinished work. If a missing result or stale decision would change today's priority, ask one bundled, specific question while continuing independent checks; do not make the whole briefing wait when reliable current evidence exists. Treat the user's answer and verified external evidence as evidence, and note unresolved conflicts.
+
+Create or update today's daily note when the startup request calls for starting the day. Put the three-way workstream snapshot near the top, before the detailed task list. Record the single essential outcome, completion condition, first action, and any material unresolved gate. Update the control board only when the priority or status actually changed. Preserve prior-day history and distinguish completed, incomplete, waiting, and replanned work. A verifiable completion may come from the user or delivery evidence; do not mark it complete from a plan, a checkbox, or an unreviewed PR alone.
+
+## Briefing shape
+
+In Korean unless the user speaks another language:
+
+1. A compact three-row table: **분류 · 업무 흐름 · 판단 근거와 다음 관문**. Show the project-level picture first.
+2. **오늘 반드시 끝낼 1개:** outcome and measurable finish condition.
+3. **첫 행동:** one concrete action. Add a question only when missing information materially changes the choice.
+
+Keep the visible briefing short. A detailed audit can live in the daily note or a linked investigation document. Stop once the user can tell what is ahead, what is on schedule, what needs attention, and what to do first.
