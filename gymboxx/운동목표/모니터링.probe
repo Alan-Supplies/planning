@@ -1,0 +1,130 @@
+# 운동목표 모니터링 — Metabase 질문용 SQL
+
+gymboxx 운영 리드 레플리카(`db-ro`) 기준. DB 시각은 UTC 라 날짜는 모두 `CONVERT_TZ(..., '+00:00', '+09:00')` 로 KST 변환한다.
+공통 조건: `user_goal.started_at >= '2026-10-19'` (10/17~18 내부 테스트 제외).
+테스트 계정 제외 기준이 정해지면 각 쿼리의 `user_id NOT IN (0)` 에 넣는다 (0 은 자리표시).
+정의는 [모니터링.md](모니터링.md) 참고.
+
+## 1. 일별 신규 목표 회원 수
+
+회원별 첫 목표일로 센다. 종료·재생성해도 한 번만.
+
+```sql
+SELECT first_date AS 날짜,
+       COUNT(*)   AS 신규_목표_회원
+  FROM (SELECT user_id, MIN(started_at) AS first_date
+          FROM user_goal
+         WHERE started_at >= '2026-10-19'
+           AND user_id NOT IN (0)
+         GROUP BY user_id) t
+ GROUP BY first_date
+ ORDER BY first_date;
+```
+
+## 2. 진행 중 목표 보유 회원 수
+
+```sql
+SELECT COUNT(DISTINCT user_id) AS 진행중_회원
+  FROM user_goal
+ WHERE status = 'IN_PROGRESS'
+   AND started_at >= '2026-10-19'
+   AND user_id NOT IN (0);
+```
+
+## 3. 목표 종료 구분
+
+한 회원이 종료 후 재생성하면 두 상태에 모두 잡힌다.
+
+```sql
+SELECT status                  AS 상태,
+       COUNT(*)                AS 목표,
+       COUNT(DISTINCT user_id) AS 회원
+  FROM user_goal
+ WHERE started_at >= '2026-10-19'
+   AND user_id NOT IN (0)
+ GROUP BY status
+ ORDER BY FIELD(status, 'IN_PROGRESS', 'COMPLETED', 'ENDED', 'DELETED');
+```
+
+## 4. 미션 진행 (진행 중 목표, 유형·부위별)
+
+진행 중 목표는 회원당 1개라 `목표 = 회원`. 진척 = 현재값 > 0 이거나 라운드 1회 이상 달성.
+
+```sql
+SELECT m.mission_type                                                    AS 유형,
+       COALESCE(m.body_target, '-')                                      AS 부위,
+       COUNT(*)                                                          AS 회원,
+       SUM(m.current_value > 0 OR m.round > 1)                           AS 진척_회원,
+       SUM(m.round - 1)                                                  AS 라운드_달성,
+       ROUND(AVG(LEAST(m.current_value / m.target_value, 1)) * 100, 1)   AS 현재라운드_평균달성률
+  FROM user_mission m
+  JOIN user_goal g ON g.id = m.goal_id
+ WHERE g.status = 'IN_PROGRESS'
+   AND g.started_at >= '2026-10-19'
+   AND g.user_id NOT IN (0)
+   AND m.status NOT IN ('REPLACED', 'CLOSED')
+ GROUP BY m.mission_type, m.body_target
+ ORDER BY FIELD(m.mission_type, 'MUSCLE', 'CARDIO', 'MOBILITY', 'BALANCE'), m.body_target;
+```
+
+## 5. 목표 보유자 중 주간 운동 기록 비율
+
+종료된 세션 + 세트 1개 이상. 세션 날짜는 `COALESCE(started_at, created_at)` (미션 집계와 같은 기준).
+목표 시작일 이후 세션만. 주는 월요일 시작. 분모는 현재 진행 중 보유 회원.
+
+```sql
+WITH holders AS (
+  SELECT user_id, started_at AS goal_date
+    FROM user_goal
+   WHERE status = 'IN_PROGRESS'
+     AND started_at >= '2026-10-19'
+     AND user_id NOT IN (0)
+), sessions AS (
+  SELECT DISTINCT h.user_id,
+         DATE(CONVERT_TZ(COALESCE(s.started_at, s.created_at), '+00:00', '+09:00')) AS d
+    FROM holders h
+    JOIN user_exercise_session s
+      ON s.user_id = h.user_id
+     AND s.is_deleted = 0
+     AND s.end_at IS NOT NULL
+   WHERE DATE(CONVERT_TZ(COALESCE(s.started_at, s.created_at), '+00:00', '+09:00')) >= h.goal_date
+     AND EXISTS (SELECT 1
+                   FROM user_exercise_session_history sh
+                   JOIN user_exercise_set_history st ON st.user_exercise_session_history_id = sh.id
+                  WHERE sh.user_exercise_session_id = s.id)
+)
+SELECT DATE_SUB(d, INTERVAL WEEKDAY(d) DAY)                                   AS 주_시작,
+       COUNT(DISTINCT user_id)                                                AS 운동기록_회원,
+       (SELECT COUNT(*) FROM holders)                                         AS 보유_회원,
+       ROUND(COUNT(DISTINCT user_id) / (SELECT COUNT(*) FROM holders) * 100, 1) AS 비율
+  FROM sessions
+ GROUP BY 주_시작
+ ORDER BY 주_시작;
+```
+
+## 6. 목표 보유자 중 주간 출석 비율
+
+```sql
+WITH holders AS (
+  SELECT user_id, started_at AS goal_date
+    FROM user_goal
+   WHERE status = 'IN_PROGRESS'
+     AND started_at >= '2026-10-19'
+     AND user_id NOT IN (0)
+), attendance AS (
+  SELECT DISTINCT h.user_id,
+         DATE(CONVERT_TZ(a.created_at, '+00:00', '+09:00')) AS d
+    FROM holders h
+    JOIN access_history a
+      ON a.user_id = h.user_id
+     AND a.type = 'ACCESS'
+   WHERE DATE(CONVERT_TZ(a.created_at, '+00:00', '+09:00')) >= h.goal_date
+)
+SELECT DATE_SUB(d, INTERVAL WEEKDAY(d) DAY)                                   AS 주_시작,
+       COUNT(DISTINCT user_id)                                                AS 출석_회원,
+       (SELECT COUNT(*) FROM holders)                                         AS 보유_회원,
+       ROUND(COUNT(DISTINCT user_id) / (SELECT COUNT(*) FROM holders) * 100, 1) AS 비율
+  FROM attendance
+ GROUP BY 주_시작
+ ORDER BY 주_시작;
+```

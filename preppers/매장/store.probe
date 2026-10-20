@@ -1,4 +1,9 @@
 ### store
 ```sql
-select * from store where id = 1;
+select s.id, s.name, s.is_franchise, s.created_at
+  , kds_account.id as kds_account_id
+  , kds_account.is_enabled
+  from store s
+    left join kds_account on s.id = kds_account.store_id
+  where s.name like '%보라매%';
 ```
