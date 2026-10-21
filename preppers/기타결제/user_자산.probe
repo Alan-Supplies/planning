@@ -1,0 +1,15 @@
+### 사용자 자산
+```sql
+select u.id, u.phone, user_type
+    , us.count
+    , pe.amount, pe.remaining_amount, pe.reason
+    , sw.organization_name, sw.prepaid_balance, sw.point_balance
+    from user u
+    left join user_stamp us on us.user_id = u.id
+    left join point_earning pe on pe.user_id = u.id
+    left join store_wallet sw on sw.user_id = u.id
+    where us.count > 0
+#         and pe.id is not null
+        and sw.prepaid_balance > 0
+ limit 100;
+```
