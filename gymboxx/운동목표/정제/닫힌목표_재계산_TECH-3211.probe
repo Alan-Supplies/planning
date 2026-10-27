@@ -1,0 +1,170 @@
+# 닫힌 목표 미션 진행량 바로잡기 — 운영 (TECH-3211)
+
+닫힌 목표 중 저장된 미션 진행량이 원천 기록과 다른 7개 목표 · 16개 미션을 직접 고친다.
+값은 2026-10-23 운영 읽기 전용으로 계산했다(맨 아래 「값 근거」). 미션 상태(CLOSED)·목표 상태는 건드리지 않는다.
+UPDATE 마다 옛 값을 조건으로 건다 — 그 사이 앱이 다시 계산했으면 0행이 되고 덮어쓰지 않는다.
+
+| 목표 | 회원 | 상태 | 원인 |
+| -- | -- | -- | -- |
+| 1 | 397029 | COMPLETED | 닫힌 뒤 그 기간 세션의 기록이 바뀌었는데 재계산되지 않았다 |
+| 12 | 366831 | ENDED | 닫힌 뒤 그 기간 세션의 기록이 바뀌었는데 재계산되지 않았다 |
+| 436 | 235104 | ENDED | 닫힌 뒤 그 기간 세션의 기록이 바뀌었는데 재계산되지 않았다 |
+| 529 | 275226 | ENDED | 닫힌 뒤 그 기간 세션의 기록이 바뀌었는데 재계산되지 않았다 |
+| 1285 | 451048 | ENDED | 닫힌 뒤 그 기간 세션의 기록이 바뀌었는데 재계산되지 않았다 |
+| 2587 | 382682 | ENDED | 목표 생성 전에 시작해 생성 뒤에 끝난 세션이 이제 포함된다(TECH-2340 규칙 변경) |
+| 2720 | 435505 | ENDED | 닫힌 뒤 그 기간 세션의 기록이 바뀌었는데 재계산되지 않았다 |
+
+## 1. 지금 값 확인
+
+```sql
+SELECT goal_id, id, mission_type, body_target, round, current_value, status
+  FROM user_mission
+ WHERE id IN (6, 7, 89, 92, 96, 3483, 4225, 4226, 4228, 10207, 20610, 20611, 20612, 21674, 21675, 21676)
+ ORDER BY goal_id, id;
+```
+
+## 2-1. 목표 1 반영
+
+```sql
+-- CORE: 6회차 1.00 → 3회차 0.00
+UPDATE user_mission SET round = 3, current_value = 0.00 WHERE id = 6 AND round = 6 AND current_value = 1.00;
+-- 유산소(초): 14회차 4320.00 → 1회차 1800.00
+UPDATE user_mission SET round = 1, current_value = 1800.00 WHERE id = 7 AND round = 14 AND current_value = 4320.00;
+```
+
+## 2-12. 목표 12 반영
+
+```sql
+-- CHEST: 1회차 4.00 → 2회차 0.00
+UPDATE user_mission SET round = 2, current_value = 0.00 WHERE id = 89 AND round = 1 AND current_value = 4.00;
+-- ARM: 2회차 0.00 → 2회차 1.00
+UPDATE user_mission SET round = 2, current_value = 1.00 WHERE id = 92 AND round = 2 AND current_value = 0.00;
+-- 스트레칭(초): 1회차 0.00 → 3회차 600.00
+UPDATE user_mission SET round = 3, current_value = 600.00 WHERE id = 96 AND round = 1 AND current_value = 0.00;
+```
+
+## 2-436. 목표 436 반영
+
+```sql
+-- SHOULDER: 1회차 0.00 → 1회차 3.00
+UPDATE user_mission SET round = 1, current_value = 3.00 WHERE id = 3483 AND round = 1 AND current_value = 0.00;
+```
+
+## 2-529. 목표 529 반영
+
+```sql
+-- CHEST: 1회차 0.00 → 1회차 3.00
+UPDATE user_mission SET round = 1, current_value = 3.00 WHERE id = 4225 AND round = 1 AND current_value = 0.00;
+-- BACK: 1회차 0.00 → 2회차 7.00
+UPDATE user_mission SET round = 2, current_value = 7.00 WHERE id = 4226 AND round = 1 AND current_value = 0.00;
+-- ARM: 2회차 2.00 → 2회차 5.00
+UPDATE user_mission SET round = 2, current_value = 5.00 WHERE id = 4228 AND round = 2 AND current_value = 2.00;
+```
+
+## 2-1285. 목표 1285 반영
+
+```sql
+-- 유산소(초): 1회차 0.00 → 1회차 3000.00
+UPDATE user_mission SET round = 1, current_value = 3000.00 WHERE id = 10207 AND round = 1 AND current_value = 0.00;
+```
+
+## 2-2587. 목표 2587 반영
+
+```sql
+-- BACK: 1회차 0.00 → 1회차 4.00
+UPDATE user_mission SET round = 1, current_value = 4.00 WHERE id = 20610 AND round = 1 AND current_value = 0.00;
+-- SHOULDER: 1회차 0.00 → 5회차 4.00
+UPDATE user_mission SET round = 5, current_value = 4.00 WHERE id = 20611 AND round = 1 AND current_value = 0.00;
+-- ARM: 1회차 0.00 → 2회차 2.00
+UPDATE user_mission SET round = 2, current_value = 2.00 WHERE id = 20612 AND round = 1 AND current_value = 0.00;
+```
+
+## 2-2720. 목표 2720 반영
+
+```sql
+-- BACK: 1회차 0.00 → 1회차 4.00
+UPDATE user_mission SET round = 1, current_value = 4.00 WHERE id = 21674 AND round = 1 AND current_value = 0.00;
+-- SHOULDER: 1회차 0.00 → 2회차 4.00
+UPDATE user_mission SET round = 2, current_value = 4.00 WHERE id = 21675 AND round = 1 AND current_value = 0.00;
+-- ARM: 1회차 0.00 → 1회차 5.00
+UPDATE user_mission SET round = 1, current_value = 5.00 WHERE id = 21676 AND round = 1 AND current_value = 0.00;
+```
+
+## 3. 반영 확인 — 16행 모두 new 와 같으면 완료
+
+```sql
+SELECT id, round, current_value FROM user_mission
+ WHERE id IN (6, 7, 89, 92, 96, 3483, 4225, 4226, 4228, 10207, 20610, 20611, 20612, 21674, 21675, 21676)
+ ORDER BY goal_id, id;
+```
+
+## 되돌리기 (필요할 때만)
+
+```sql
+UPDATE user_mission SET round = 6, current_value = 1.00 WHERE id = 6 AND round = 3 AND current_value = 0.00;
+UPDATE user_mission SET round = 14, current_value = 4320.00 WHERE id = 7 AND round = 1 AND current_value = 1800.00;
+UPDATE user_mission SET round = 1, current_value = 4.00 WHERE id = 89 AND round = 2 AND current_value = 0.00;
+UPDATE user_mission SET round = 2, current_value = 0.00 WHERE id = 92 AND round = 2 AND current_value = 1.00;
+UPDATE user_mission SET round = 1, current_value = 0.00 WHERE id = 96 AND round = 3 AND current_value = 600.00;
+UPDATE user_mission SET round = 1, current_value = 0.00 WHERE id = 3483 AND round = 1 AND current_value = 3.00;
+UPDATE user_mission SET round = 1, current_value = 0.00 WHERE id = 4225 AND round = 1 AND current_value = 3.00;
+UPDATE user_mission SET round = 1, current_value = 0.00 WHERE id = 4226 AND round = 2 AND current_value = 7.00;
+UPDATE user_mission SET round = 2, current_value = 2.00 WHERE id = 4228 AND round = 2 AND current_value = 5.00;
+UPDATE user_mission SET round = 1, current_value = 0.00 WHERE id = 10207 AND round = 1 AND current_value = 3000.00;
+UPDATE user_mission SET round = 1, current_value = 0.00 WHERE id = 20610 AND round = 1 AND current_value = 4.00;
+UPDATE user_mission SET round = 1, current_value = 0.00 WHERE id = 20611 AND round = 5 AND current_value = 4.00;
+UPDATE user_mission SET round = 1, current_value = 0.00 WHERE id = 20612 AND round = 2 AND current_value = 2.00;
+UPDATE user_mission SET round = 1, current_value = 0.00 WHERE id = 21674 AND round = 1 AND current_value = 4.00;
+UPDATE user_mission SET round = 1, current_value = 0.00 WHERE id = 21675 AND round = 2 AND current_value = 4.00;
+UPDATE user_mission SET round = 1, current_value = 0.00 WHERE id = 21676 AND round = 1 AND current_value = 5.00;
+```
+
+## 값 근거 — 앱 재계산 규칙을 옮긴 SELECT (읽기 전용)
+
+닫힌 목표 미션 전체를 원천으로 다시 계산한다. old 와 new 가 다른 행이 위의 16개다.
+
+```sql
+SELECT * FROM (
+SELECT x.goal_id, x.mission_id, x.mission_type, x.body_target, x.target_value,
+       x.round AS old_round, x.current_value AS old_current,
+       FLOOR(x.v / x.target_value) + 1 AS new_round,
+       ROUND(MOD(x.v, x.target_value), 2) AS new_current
+  FROM (
+        SELECT g.id AS goal_id, m.id AS mission_id, m.mission_type, m.body_target, m.target_value,
+               m.round, m.current_value,
+               ROUND(CASE
+                 WHEN m.mission_type = 'MUSCLE' AND m.value_unit = 'SET_EQUIVALENT' THEN (
+                   SELECT COUNT(DISTINCT sh.id)
+                     FROM user_exercise_session s
+                     JOIN user_exercise_session_history h ON h.user_exercise_session_id = s.id
+                     JOIN exercise e ON e.id = h.exercise_id AND e.status = 'ACTIVE'
+                     JOIN user_exercise_set_history sh ON sh.user_exercise_session_history_id = h.id
+                     JOIN exercise_body_part_detail ebd ON ebd.exercise_id = e.id AND ebd.status = 'ACTIVE'
+                     JOIN body_part_detail bd ON bd.id = ebd.body_part_detail_id AND bd.status = 'ACTIVE'
+                     JOIN body_part bp ON bp.id = bd.body_part_id
+                    WHERE s.user_id = g.user_id AND s.is_deleted = 0 AND s.end_at IS NOT NULL
+                      AND s.end_at >= m.assigned_at AND s.end_at < g.ended_at
+                      AND bp.part = m.body_target)
+                 WHEN m.mission_type IN ('CARDIO', 'MOBILITY') AND m.value_unit = 'SECOND' THEN (
+                   SELECT COALESCE(SUM(sh.duration_second), 0)
+                     FROM user_exercise_session s
+                     JOIN user_exercise_session_history h ON h.user_exercise_session_id = s.id
+                     JOIN exercise e ON e.id = h.exercise_id AND e.status = 'ACTIVE'
+                     JOIN user_exercise_set_history sh ON sh.user_exercise_session_history_id = h.id
+                    WHERE s.user_id = g.user_id AND s.is_deleted = 0 AND s.end_at IS NOT NULL
+                      AND s.end_at >= m.assigned_at AND s.end_at < g.ended_at
+                      AND e.training_type = m.mission_type
+                      AND (m.body_target IS NULL OR EXISTS (
+                            SELECT 1 FROM exercise_body_part ebp JOIN body_part bp2 ON bp2.id = ebp.body_part_id
+                             WHERE ebp.exercise_id = e.id AND ebp.status = 'ACTIVE' AND bp2.part = m.body_target)))
+               END, 2) AS v
+          FROM user_goal g
+          JOIN user_mission m ON m.goal_id = g.id
+         WHERE g.status IN ('COMPLETED', 'ENDED') AND g.ended_at IS NOT NULL
+           AND m.status <> 'REPLACED' AND m.axis = 'TRAINING_TYPE'
+       ) x
+ WHERE x.v IS NOT NULL
+) r
+WHERE r.old_round <> r.new_round OR r.old_current <> r.new_current
+ORDER BY r.goal_id, r.mission_id;
+```
